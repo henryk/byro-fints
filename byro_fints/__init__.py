@@ -11,7 +11,7 @@ class PluginApp(AppConfig):
         author = 'Henryk Plötz'
         description = ugettext_lazy('Byro plugin to retrieve bank statements via FinTS 3.0 (formerly known as HBCI)')
         visible = True
-        version = '0.0.0'
+        version = '0.0.1'
 
     def ready(self):
         from . import signals  # NOQA
