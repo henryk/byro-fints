@@ -1,0 +1,3 @@
+recursive-include byro_fints/static *
+recursive-include byro_fints/templates *
+recursive-include byro_fints/locale *
