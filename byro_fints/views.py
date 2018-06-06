@@ -2,15 +2,23 @@ from django import forms
 from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import CreateView, FormView, ListView
+from django.views.generic.detail import SingleObjectMixin
+
+from fints.client import FinTS3PinTanClient
 
 from .data import get_bank_information_by_blz
-from .models import FinTSLogin
+from .models import FinTSLogin, FinTSAccount
 
 
 class Dashboard(ListView):
     template_name = 'byro_fints/dashboard.html'
     queryset = FinTSLogin.objects.all()
     context_object_name = "fints_logins"
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        context['fints_accounts'] = FinTSAccount.objects.all()
+        return context
 
 
 class FinTSLoginCreateView(CreateView):
@@ -42,15 +50,42 @@ class PinRequestForm(forms.Form):
     pin = forms.CharField(label=_("PIN"), widget=forms.PasswordInput())
 
 
-class FinTSLoginRefreshView(FormView):
+class FinTSLoginRefreshView(SingleObjectMixin, FormView):
     template_name = 'byro_fints/login_refresh.html'
     form_class = PinRequestForm
     success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+    model = FinTSLogin
+    context_object_name = 'fints_login'
+
+    @property
+    def object(self):
+        return self.get_object() ## FIXME: WTF?  Apparently I'm supposed to implement a get()/post() that sets self.object?
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
+        fints_login = self.get_object()
+        form.fields['pin'].label = _('PIN for \'{login_name}\' at \'{display_name}\'').format(
+            login_name=fints_login.login_name,
+            display_name=fints_login.name
+        )
         return form
 
     def form_valid(self, form):
-        print(form.cleaned_data['pin'])
+        fints_login = self.get_object()
+        client = FinTS3PinTanClient(
+            fints_login.blz,
+            fints_login.login_name,
+            form.cleaned_data['pin'],
+            fints_login.fints_url
+        )
+
+        accounts = client.get_sepa_accounts()
+
+        for account in accounts:
+            ## FIXME: Check duplicates
+            print(account)
+            a = FinTSAccount(login=fints_login, **account._asdict())
+            ## FIXME: Create accounts
+            a.save()
+
         return super().form_valid(form)

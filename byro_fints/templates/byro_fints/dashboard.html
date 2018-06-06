@@ -5,11 +5,11 @@
 
 {% block fints_content %}
     <p>{% blocktrans %}
-        To use the FinTS functionality, you need to create a bank login and fetch the account list.
+        To use the FinTS functionality, you need to create a bank login and fetch the account list. Then you can link the FinTS accounts to existing or new accounts in the bookkeeping module.
     {% endblocktrans %}</p>
     <p><a class="btn btn-success" href="{% url "plugins:byro_fints:fints.login.add" %}"><span class="fa fa-plus"></span> {% trans "Create bank login" %}</a></p>
 
-
+    <h4>{% trans "Known bank logins" %}</h4>
     <table class="table table-sm">
         <thead>
             <tr>
@@ -35,6 +35,27 @@
                 </tr>
             {% endfor %}
         </tbody>
-</table>
+    </table>
+
+    <h4>{% trans "Known bank accounts" %}</h4>
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>{% trans "Bank login" %}</th>
+                <th>{% trans "IBAN" %}</th>
+                <th>{% trans "BIC" %}</th>
+                <th class="table-column-large">{% trans "Linked to account" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for account in fints_accounts %}
+                <tr>
+                    <td>{{ account.login.name }}</td>
+                    <td>{{ account.iban }}</td>
+                    <td>{{ account.bic }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 
 {% endblock %}
