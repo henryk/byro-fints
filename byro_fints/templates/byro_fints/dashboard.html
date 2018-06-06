@@ -17,6 +17,7 @@
                 <th class="table-column-small">{% trans "Login name" %}</th>
                 <th class="table-column-large">{% trans "Name" %}</th>
                 <th class="table-column-large">{% trans "FinTS URL" %}</th>
+                <th>{% trans "Actions" %}</th>
             </tr>
         </thead>
         <tbody>
@@ -26,6 +27,11 @@
                     <td>{{ login.login_name }}</td>
                     <td>{{ login.name }}</td>
                     <td>{{ login.fints_url }}</td>
+                    <td>
+                        <a href="{% url "plugins:byro_fints:fints.login.refresh" pk=login.pk %}" class="btn btn-success">
+                            <span class="fa fa-refresh" title="{% trans "Refresh account data" %}"></span><span class="sr-only">{% trans "Refresh account data" %}</span>
+                        </a>
+                    </td>
                 </tr>
             {% endfor %}
         </tbody>

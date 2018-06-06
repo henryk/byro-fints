@@ -1,7 +1,7 @@
 from django import forms
 from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
-from django.views.generic import CreateView, ListView
+from django.views.generic import CreateView, FormView, ListView
 
 from .data import get_bank_information_by_blz
 from .models import FinTSLogin
@@ -34,4 +34,23 @@ class FinTSLoginCreateView(CreateView):
 
         if not form.instance.fints_url:
             raise forms.ValidationError(_("FinTS URL could not be looked up automatically, please fill it in manually."))
+        return super().form_valid(form)
+
+
+class PinRequestForm(forms.Form):
+    form_name = _("PIN request")
+    pin = forms.CharField(label=_("PIN"), widget=forms.PasswordInput())
+
+
+class FinTSLoginRefreshView(FormView):
+    template_name = 'byro_fints/login_refresh.html'
+    form_class = PinRequestForm
+    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+
+    def get_form(self, *args, **kwargs):
+        form = super().get_form(*args, **kwargs)
+        return form
+
+    def form_valid(self, form):
+        print(form.cleaned_data['pin'])
         return super().form_valid(form)

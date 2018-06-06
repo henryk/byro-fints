@@ -1,0 +1,15 @@
+{% extends "byro_fints/base.html" %}
+{% load bootstrap4 %}
+{% load i18n %}
+
+{% block fints_heading %}{% trans "Refresh bank and account information …" %}{% endblock %}
+
+{% block fints_content %}
+	<h4>{% blocktrans %}PIN request{% endblocktrans %}</h4>
+    <form method="post">
+        {% csrf_token %}
+        {% bootstrap_form form layout='horizontal' %}
+        <button class="btn btn-success" type="submit">{% trans "Fetch information" %}</button>
+    </form>
+
+{% endblock %}
