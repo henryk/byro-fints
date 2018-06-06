@@ -1,0 +1,34 @@
+{% extends "byro_fints/base.html" %}
+{% load i18n %}
+
+{% block fints_heading %}{% trans "Dashboard" %}{% endblock %}
+
+{% block fints_content %}
+    <p>{% blocktrans %}
+        To use the FinTS functionality, you need to create a bank login and fetch the account list.
+    {% endblocktrans %}</p>
+    <p><a class="btn btn-success" href="{% url "plugins:byro_fints:fints.login.add" %}"><span class="fa fa-plus"></span> {% trans "Create bank login" %}</a></p>
+
+
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th class="table-column-small">{% trans "BLZ" %}</th>
+                <th class="table-column-small">{% trans "Login name" %}</th>
+                <th class="table-column-large">{% trans "Name" %}</th>
+                <th class="table-column-large">{% trans "FinTS URL" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for login in fints_logins %}
+                <tr>
+                    <td>{{ login.blz }}</td>
+                    <td>{{ login.login_name }}</td>
+                    <td>{{ login.name }}</td>
+                    <td>{{ login.fints_url }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+</table>
+
+{% endblock %}

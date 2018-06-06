@@ -1,0 +1,21 @@
+{% extends "office/base_headline.html" %}
+{% load i18n %}
+
+{% block headline %}FinTS :: {% block fints_heading %}{% endblock %}{% endblock %}
+
+{% block content %}
+<ul class="nav nav-pills">
+  <li class="nav-item">
+    <a
+      class="nav-link {% if "fints.dashboard" in url_name %}active{% endif %}"
+      href="{% url "plugins:byro_fints:fints.dashboard" %}"
+    >
+        {% trans "Dashboard" %}
+    </a>
+  </li>
+</ul>
+
+{% block fints_content %}
+{% endblock %}
+
+{% endblock %}

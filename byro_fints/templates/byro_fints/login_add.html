@@ -1,0 +1,17 @@
+{% extends "byro_fints/base.html" %}
+{% load bootstrap4 %}
+{% load i18n %}
+
+{% block fints_heading %}{% trans "Create bank login …" %}{% endblock %}
+
+{% block fints_content %}
+	<p>{% blocktrans %}
+		Please fill in at least BLZ and login name. The other fields can possibly be autofilled.
+	{% endblocktrans %}</p>
+    <form method="post">
+        {% csrf_token %}
+        {% bootstrap_form form layout='horizontal' %}
+        <button class="btn btn-success" type="submit">{% trans "Save" %}</button>
+    </form>
+
+{% endblock %}

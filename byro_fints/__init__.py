@@ -15,6 +15,7 @@ class PluginApp(AppConfig):
 
     def ready(self):
         from . import signals  # NOQA
+        from . import urls  # NOQA
 
 
 default_app_config = 'byro_fints.PluginApp'
