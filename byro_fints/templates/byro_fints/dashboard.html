@@ -53,6 +53,13 @@
                     <td>{{ account.login.name }}</td>
                     <td>{{ account.iban }}</td>
                     <td>{{ account.bic }}</td>
+                    <td>
+                        {% if account.account %}
+                            {{ account.account.name }}<!-- FIXME Allow editing/re-linking -->
+                        {% else %}
+                            <a href="{% url "plugins:byro_fints:fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
+                        {% endif %}
+                    </td>
                 </tr>
             {% endfor %}
         </tbody>

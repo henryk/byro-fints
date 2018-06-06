@@ -9,15 +9,17 @@ from fints.client import FinTS3PinTanClient
 from .data import get_bank_information_by_blz
 from .models import FinTSLogin, FinTSAccount
 
+from byro.bookkeeping.models import Account, AccountCategory
+
 
 class Dashboard(ListView):
     template_name = 'byro_fints/dashboard.html'
-    queryset = FinTSLogin.objects.all()
+    queryset = FinTSLogin.objects.order_by('blz').all()
     context_object_name = "fints_logins"
 
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
-        context['fints_accounts'] = FinTSAccount.objects.all()
+        context['fints_accounts'] = FinTSAccount.objects.order_by('iban').all()
         return context
 
 
@@ -89,3 +91,33 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
             a.save()
 
         return super().form_valid(form)
+
+
+# FIXME: Allow inline create
+# FIXME: Name of default accounts?
+class FinTSAccountLinkView(SingleObjectMixin, FormView):
+    template_name = 'byro_fints/account_link.html'
+    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+
+    model = FinTSAccount
+    context_object_name = 'fints_account'
+
+    @property
+    def object(self):
+        return self.get_object()
+
+    def get_form_class(self):
+        class LinkForm(forms.Form):
+            existing_account = forms.ChoiceField(
+                choices=[(a.pk, a.name) for a in Account.objects.all() if not hasattr(a,'fints_account')],
+                initial=self.object.account.pk if self.object.account else None,
+            )
+        return LinkForm
+
+    def form_valid(self, form):
+        account = self.get_object()
+        account.account = Account.objects.get(pk=form.cleaned_data['existing_account'])
+        account.save()
+        return super().form_valid(form)
+
+
