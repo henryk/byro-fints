@@ -30,7 +30,7 @@ class FinTSLoginCreateView(CreateView):
     template_name = 'byro_fints/login_add.html'
     model = FinTSLogin
     form_class = forms.modelform_factory(FinTSLogin, fields=['blz', 'login_name', 'name', 'fints_url'])
-    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+    success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
@@ -58,7 +58,7 @@ class PinRequestForm(forms.Form):
 class FinTSLoginRefreshView(SingleObjectMixin, FormView):
     template_name = 'byro_fints/login_refresh.html'
     form_class = PinRequestForm
-    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+    success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
     model = FinTSLogin
     context_object_name = 'fints_login'
 
@@ -100,7 +100,7 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
 # FIXME: Name of default accounts?
 class FinTSAccountLinkView(SingleObjectMixin, FormView):
     template_name = 'byro_fints/account_link.html'
-    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+    success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
 
     model = FinTSAccount
     context_object_name = 'fints_account'
@@ -131,7 +131,7 @@ class PinRequestAndDateForm(PinRequestForm):
 class FinTSAccountFetchView(SingleObjectMixin, FormView):
     template_name = 'byro_fints/account_fetch.html'
     form_class = PinRequestAndDateForm
-    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+    success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
     model = FinTSAccount
     context_object_name = 'fints_account'
 
@@ -171,6 +171,9 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
         transactions = client.get_statement(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
 
         for t in transactions:
+            # FIXME Warning remove this before release
+            import pprint
+            pprint.pprint(t.data)
             originator = "{} {} {}".format(
                 t.data.get('applicant_name') or '',
                 t.data.get('applicant_bin') or '',

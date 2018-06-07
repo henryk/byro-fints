@@ -7,7 +7,7 @@
     <p>{% blocktrans %}
         To use the FinTS functionality, you need to create a bank login and fetch the account list. Then you can link the FinTS accounts to existing or new accounts in the bookkeeping module.
     {% endblocktrans %}</p>
-    <p><a class="btn btn-success" href="{% url "plugins:byro_fints:fints.login.add" %}"><span class="fa fa-plus"></span> {% trans "Create bank login" %}</a></p>
+    <p><a class="btn btn-success" href="{% url "plugins:byro_fints:finance.fints.login.add" %}"><span class="fa fa-plus"></span> {% trans "Create bank login" %}</a></p>
 
     <h4>{% trans "Known bank logins" %}</h4>
     <table class="table table-sm">
@@ -28,7 +28,7 @@
                     <td>{{ login.name }}</td>
                     <td>{{ login.fints_url }}</td>
                     <td>
-                        <a href="{% url "plugins:byro_fints:fints.login.refresh" pk=login.pk %}" class="btn btn-success">
+                        <a href="{% url "plugins:byro_fints:finance.fints.login.refresh" pk=login.pk %}" class="btn btn-success">
                             <span class="fa fa-refresh" title="{% trans "Refresh account data" %}"></span><span class="sr-only">{% trans "Refresh account data" %}</span>
                         </a>
                     </td>
@@ -58,12 +58,12 @@
                         {% if account.account %}
                             {{ account.account.name }}<!-- FIXME Allow editing/re-linking -->
                         {% else %}
-                            <a href="{% url "plugins:byro_fints:fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
+                            <a href="{% url "plugins:byro_fints:finance.fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
                         {% endif %}
                     </td>
                     <td>
                         {% if account.account %}
-                            <a href="{% url "plugins:byro_fints:fints.account.fetch" pk=account.pk %}" class="btn btn-success">
+                            <a href="{% url "plugins:byro_fints:finance.fints.account.fetch" pk=account.pk %}" class="btn btn-success">
                                 <span class="fa fa-download" title="{% trans "Fetch transactions" %}"></span><span class="sr-only">{% trans "Fetch transactions" %}</span>
                             </a>
                         {% endif %}

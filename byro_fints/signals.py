@@ -11,8 +11,8 @@ def fints_sidebar(sender, **kwargs):
     request = sender
     if hasattr(request, 'user') and not request.user.is_anonymous:
         return {
-            'icon': 'university',
+        	'section': 'finance',
             'label': _('Communication with bank'),
-            'url': reverse('plugins:byro_fints:fints.dashboard'),
+            'url': reverse('plugins:byro_fints:finance.fints.dashboard'),
             'active': 'byro_fints' in request.resolver_match.namespace,
         }
