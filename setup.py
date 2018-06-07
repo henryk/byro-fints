@@ -32,8 +32,7 @@ setup(
     author_email='henryk@ploetzli.ch',
     license='Apache Software License',
 
-    install_requires=['python-fints>=0.2.1'],
-    dependency_links=['https://github.com/raphaelm/python-fints/archive/v0.2.1.zip#egg=python-fints-0.2.1'],
+    install_requires=['fints>=0.2.1'],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,
