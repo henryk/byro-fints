@@ -57,4 +57,4 @@ class FinTSAccount(models.Model):
     subaccount = models.CharField(max_length=35, null=False, blank=False)
     blz = models.CharField(max_length=35, null=False, blank=False)
 
-
+    last_fetch_date = models.DateField(null=True)

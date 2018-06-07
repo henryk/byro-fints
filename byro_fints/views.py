@@ -3,13 +3,12 @@ from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import CreateView, FormView, ListView
 from django.views.generic.detail import SingleObjectMixin
-
 from fints.client import FinTS3PinTanClient
 
-from .data import get_bank_information_by_blz
-from .models import FinTSLogin, FinTSAccount
+from byro.bookkeeping.models import Account
 
-from byro.bookkeeping.models import Account, AccountCategory
+from .data import get_bank_information_by_blz
+from .models import FinTSAccount, FinTSLogin
 
 
 class Dashboard(ListView):
@@ -61,7 +60,7 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
 
     @property
     def object(self):
-        return self.get_object() ## FIXME: WTF?  Apparently I'm supposed to implement a get()/post() that sets self.object?
+        return self.get_object()  # FIXME: WTF?  Apparently I'm supposed to implement a get()/post() that sets self.object?
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
@@ -84,11 +83,11 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
         accounts = client.get_sepa_accounts()
 
         for account in accounts:
-            a = FinTSAccount.objects.get_or_create(
+            FinTSAccount.objects.get_or_create(
                 login=fints_login,
                 **account._asdict()
             )
-            ## FIXME: Create accounts in bookeeping?
+            # FIXME: Create accounts in bookeeping?
 
         return super().form_valid(form)
 
@@ -109,7 +108,7 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
     def get_form_class(self):
         class LinkForm(forms.Form):
             existing_account = forms.ChoiceField(
-                choices=[(a.pk, a.name) for a in Account.objects.all() if not hasattr(a,'fints_account')],
+                choices=[(a.pk, a.name) for a in Account.objects.all() if not hasattr(a, 'fints_account')],
                 initial=self.object.account.pk if self.object.account else None,
             )
         return LinkForm
@@ -119,5 +118,3 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
         account.account = Account.objects.get(pk=form.cleaned_data['existing_account'])
         account.save()
         return super().form_valid(form)
-
-
