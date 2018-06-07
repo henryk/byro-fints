@@ -7,6 +7,7 @@ from django.views.generic import CreateView, FormView, ListView
 from django.views.generic.detail import SingleObjectMixin
 from fints.client import FinTS3PinTanClient
 from fints.models import SEPAAccount
+from mt940 import models as mt940_models
 
 from byro.bookkeeping.models import Account, RealTransaction, TransactionChannel
 
@@ -180,6 +181,20 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
                 t.data.get('additional_purpose') or '',
                 t.data.get('posting_text') or '',
             )
+
+            # Handle JSON "But I cant't serialize that?!" nonsense
+            data = dict()
+            for k, v in t.data.items():
+                if isinstance(v, mt940_models.Amount):
+                    v = {
+                        'amount': str(v.amount),
+                        'currency': v.currency,
+                    }
+                elif isinstance(v, mt940_models.Date):
+                    v = v.isoformat()
+                
+                data[k] = v
+
             RealTransaction.objects.get_or_create(
                 channel=TransactionChannel.BANK,
                 value_datetime=t.data.get('date'),  # FIXME Verify that these date fields are correct
@@ -188,7 +203,7 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
                 importer='byro_fints',
                 originator=originator,
                 purpose=purpose,
-                # defaults={'data': t.data},  # FIXME JSON Fubar
+                defaults={'data': data},
             )
 
         fints_account.last_fetch_date = date.today()

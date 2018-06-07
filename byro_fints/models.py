@@ -46,7 +46,7 @@ class FinTSAccount(models.Model):
 
     account = models.OneToOneField(
         to='bookkeeping.Account',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='fints_account',
         null=True
     )
