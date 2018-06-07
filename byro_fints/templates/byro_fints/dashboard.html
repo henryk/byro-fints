@@ -45,6 +45,7 @@
                 <th>{% trans "IBAN" %}</th>
                 <th>{% trans "BIC" %}</th>
                 <th class="table-column-large">{% trans "Linked to account" %}</th>
+                <th>{% trans "Actions" %}</th>
             </tr>
         </thead>
         <tbody>
@@ -58,6 +59,13 @@
                             {{ account.account.name }}<!-- FIXME Allow editing/re-linking -->
                         {% else %}
                             <a href="{% url "plugins:byro_fints:fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if account.account %}
+                            <a href="{% url "plugins:byro_fints:fints.account.fetch" pk=account.pk %}" class="btn btn-success">
+                                <span class="fa fa-download" title="{% trans "Fetch transactions" %}"></span><span class="sr-only">{% trans "Fetch transactions" %}</span>
+                            </a>
                         {% endif %}
                     </td>
                 </tr>

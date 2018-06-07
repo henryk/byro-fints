@@ -1,11 +1,14 @@
+from datetime import date
+
 from django import forms
 from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import CreateView, FormView, ListView
 from django.views.generic.detail import SingleObjectMixin
 from fints.client import FinTS3PinTanClient
+from fints.models import SEPAAccount
 
-from byro.bookkeeping.models import Account
+from byro.bookkeeping.models import Account, RealTransaction, TransactionChannel
 
 from .data import get_bank_information_by_blz
 from .models import FinTSAccount, FinTSLogin
@@ -117,4 +120,78 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
         account = self.get_object()
         account.account = Account.objects.get(pk=form.cleaned_data['existing_account'])
         account.save()
+        return super().form_valid(form)
+
+
+class PinRequestAndDateForm(PinRequestForm):
+    fetch_from_date = forms.DateField(label=_("Fetch start date"), required=True)
+
+
+class FinTSAccountFetchView(SingleObjectMixin, FormView):
+    template_name = 'byro_fints/account_fetch.html'
+    form_class = PinRequestAndDateForm
+    success_url = reverse_lazy('plugins:byro_fints:fints.dashboard')
+    model = FinTSAccount
+    context_object_name = 'fints_account'
+
+    @property
+    def object(self):
+        return self.get_object()
+
+    def get_form(self, *args, **kwargs):
+        form = super().get_form(*args, **kwargs)
+        fints_account = self.get_object()
+        fints_login = fints_account.login
+        form.fields['pin'].label = _('PIN for \'{login_name}\' at \'{display_name}\'').format(
+            login_name=fints_login.login_name,
+            display_name=fints_login.name
+        )
+        form.fields['fetch_from_date'].initial = fints_account.last_fetch_date or date.today().replace(day=1, month=1)
+        # FIXME Check for plus/minus 1 day
+        return form
+
+    def form_valid(self, form):
+        fints_account = self.get_object()
+        fints_login = fints_account.login
+        client = FinTS3PinTanClient(
+            fints_login.blz,
+            fints_login.login_name,
+            form.cleaned_data['pin'],
+            fints_login.fints_url
+        )
+
+        sepa_account = SEPAAccount(
+            **{
+                name: getattr(fints_account, name)
+                for name in SEPAAccount._fields
+            }
+        )
+
+        transactions = client.get_statement(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
+
+        for t in transactions:
+            originator = "{} {} {}".format(
+                t.data.get('applicant_name') or '',
+                t.data.get('applicant_bin') or '',
+                t.data.get('applicant_iban') or '',
+            )
+            purpose = "{} {} | {}".format(
+                t.data.get('purpose') or '',
+                t.data.get('additional_purpose') or '',
+                t.data.get('posting_text') or '',
+            )
+            RealTransaction.objects.get_or_create(
+                channel=TransactionChannel.BANK,
+                value_datetime=t.data.get('date'),  # FIXME Verify that these date fields are correct
+                booking_datetime=t.data.get('entry_date'),
+                amount=t.data.get('amount').amount,
+                importer='byro_fints',
+                originator=originator,
+                purpose=purpose,
+                # defaults={'data': t.data},  # FIXME JSON Fubar
+            )
+
+        fints_account.last_fetch_date = date.today()
+        fints_account.save()
+
         return super().form_valid(form)
