@@ -84,11 +84,11 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
         accounts = client.get_sepa_accounts()
 
         for account in accounts:
-            ## FIXME: Check duplicates
-            print(account)
-            a = FinTSAccount(login=fints_login, **account._asdict())
-            ## FIXME: Create accounts
-            a.save()
+            a = FinTSAccount.objects.get_or_create(
+                login=fints_login,
+                **account._asdict()
+            )
+            ## FIXME: Create accounts in bookeeping?
 
         return super().form_valid(form)
 
