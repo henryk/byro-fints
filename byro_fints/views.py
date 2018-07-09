@@ -173,20 +173,6 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
         transactions = client.get_statement(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
 
         for t in transactions:
-            # FIXME Warning remove this before release
-            import pprint
-            pprint.pprint(t.data)
-            originator = "{} {} {}".format(
-                t.data.get('applicant_name') or '',
-                t.data.get('applicant_bin') or '',
-                t.data.get('applicant_iban') or '',
-            )
-            purpose = "{} {} | {}".format(
-                t.data.get('purpose') or '',
-                t.data.get('additional_purpose') or '',
-                t.data.get('posting_text') or '',
-            )
-
             # Handle JSON "But I cant't serialize that?!" nonsense
             mt940_data = dict()
             for k, v in t.data.items():
