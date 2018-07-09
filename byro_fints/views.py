@@ -1,6 +1,7 @@
 from datetime import date
 
 from django import forms
+from django.db import transaction
 from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import CreateView, FormView, ListView
@@ -9,7 +10,7 @@ from fints.client import FinTS3PinTanClient
 from fints.models import SEPAAccount
 from mt940 import models as mt940_models
 
-from byro.bookkeeping.models import Account, RealTransaction, TransactionChannel
+from byro.bookkeeping.models import Account, Transaction, Booking
 
 from .data import get_bank_information_by_blz
 from .models import FinTSAccount, FinTSLogin
@@ -151,6 +152,7 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
         # FIXME Check for plus/minus 1 day
         return form
 
+    @transaction.atomic
     def form_valid(self, form):
         fints_account = self.get_object()
         fints_login = fints_account.login
@@ -186,7 +188,7 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
             )
 
             # Handle JSON "But I cant't serialize that?!" nonsense
-            data = dict()
+            mt940_data = dict()
             for k, v in t.data.items():
                 if isinstance(v, mt940_models.Amount):
                     v = {
@@ -196,18 +198,49 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
                 elif isinstance(v, mt940_models.Date):
                     v = v.isoformat()
                 
-                data[k] = v
+                mt940_data[k] = v
 
-            RealTransaction.objects.get_or_create(
-                channel=TransactionChannel.BANK,
-                value_datetime=t.data.get('date'),  # FIXME Verify that these date fields are correct
-                booking_datetime=t.data.get('entry_date'),
-                amount=t.data.get('amount').amount,
-                importer='byro_fints',
-                originator=originator,
-                purpose=purpose,
-                defaults={'data': data},
+            amount = t.data.get('amount').amount
+            if amount < 0:
+                amount = -amount
+                status = 'D'
+            else:
+                status = 'C'
+
+            data = dict(
+                mt940_data=mt940_data,
+                other_party=originator,
             )
+
+            args = dict(
+                booking_datetime=t.data.get('entry_date'),
+                amount=amount,
+                importer='byro_fints',
+                memo=purpose,
+            )
+
+            # About the status:
+            #  From the bank's perspective our bank account (an asset to us)
+            #  is a liability. Money we have on the account is money they owe
+            #  us. From the banks's perspective, money we get into our account
+            #  is credited, it increases their liabilities.
+            #  So from our perspective we have to invert that.
+
+            if status == 'C':
+                args['debit_account'] = fints_account.account
+            else:
+                args['credit_account'] = fints_account.account
+
+            for booking in Booking.objects.filter(
+                transaction__value_datetime=t.data.get('date'),
+                **args,
+            ).all():
+                if booking.data == data:
+                    break
+            else:
+                tr = Transaction.objects.create(value_datetime=t.data.get('date'))
+                Booking.objects.create(transaction=tr, data=data, **args)
+
 
         fints_account.last_fetch_date = date.today()
         fints_account.save()
