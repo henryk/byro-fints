@@ -32,7 +32,7 @@ setup(
     author_email='henryk@ploetzli.ch',
     license='Apache Software License',
 
-    install_requires=['fints>=0.2.1'],
+    install_requires=['fints>=0.2.1', 'django-securebox'],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,

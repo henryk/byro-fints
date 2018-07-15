@@ -53,7 +53,12 @@ class FinTSLoginCreateView(CreateView):
 
 class PinRequestForm(forms.Form):
     form_name = _("PIN request")
-    pin = forms.CharField(label=_("PIN"), widget=forms.PasswordInput())
+    pin = forms.CharField(label=_("PIN"), widget=forms.PasswordInput(render_value=True))
+
+
+PIN_CACHED_SENTINEL = '******'
+def _cache_label(fints_login):
+    return 'byro_fints__pin__{}__cache'.format(fints_login.pk)
 
 
 class FinTSLoginRefreshView(SingleObjectMixin, FormView):
@@ -74,6 +79,8 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
             login_name=fints_login.login_name,
             display_name=fints_login.name
         )
+        if _cache_label(fints_login) in self.request.securebox:
+            form.fields['pin'].initial = PIN_CACHED_SENTINEL
         return form
 
     def form_valid(self, form):
@@ -81,11 +88,16 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
         client = FinTS3PinTanClient(
             fints_login.blz,
             fints_login.login_name,
-            form.cleaned_data['pin'],
+            self.request.securebox[_cache_label(fints_login)]
+                if form.cleaned_data['pin'] == PIN_CACHED_SENTINEL
+                else form.cleaned_data['pin'],
             fints_login.fints_url
         )
 
         accounts = client.get_sepa_accounts()
+
+        if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
+            self.request.securebox.store_value(_cache_label(fints_login), form.cleaned_data['pin'])
 
         for account in accounts:
             FinTSAccount.objects.get_or_create(
@@ -148,6 +160,8 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
             login_name=fints_login.login_name,
             display_name=fints_login.name
         )
+        if _cache_label(fints_login) in self.request.securebox:
+            form.fields['pin'].initial = PIN_CACHED_SENTINEL
         form.fields['fetch_from_date'].initial = fints_account.last_fetch_date or date.today().replace(day=1, month=1)
         # FIXME Check for plus/minus 1 day
         return form
@@ -159,7 +173,9 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
         client = FinTS3PinTanClient(
             fints_login.blz,
             fints_login.login_name,
-            form.cleaned_data['pin'],
+            self.request.securebox[_cache_label(fints_login)]
+                if form.cleaned_data['pin'] == PIN_CACHED_SENTINEL
+                else form.cleaned_data['pin'],
             fints_login.fints_url
         )
 
@@ -171,6 +187,9 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
         )
 
         transactions = client.get_statement(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
+
+        if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
+            self.request.securebox.store_value(_cache_label(fints_login), form.cleaned_data['pin'])
 
         for t in transactions:
             originator = "{} {} {}".format(
