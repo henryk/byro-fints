@@ -1,0 +1,39 @@
+{% extends "byro_fints/base.html" %}
+{% load bootstrap4 %}
+{% load i18n %}
+{% load my_filters %}
+
+{% block fints_heading %}{% trans "Account information" %}{% endblock %}
+
+{% block fints_content %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="table-column-large">{% trans "Operation" %}</th>
+                <th class="table-column-small">{% trans "Supported by bank" %}</th>
+                <th class="table-column-small">{% trans "Allowed on account" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for op in OPERATIONS %}
+                <tr>
+                    <th>{{ op.name }}</th>
+                    <th>
+                        {% if information.bank.supported_operations|lookup:op %}
+                            {% trans "Yes" %}
+                        {% else %}
+                        {% endif %}
+                    </th>
+                    {% if account_information %}
+                        <th>
+                            {% if account_information.supported_operations|lookup:op %}
+                                {% trans "Yes" %}
+                            {% else %}
+                            {% endif %}
+                        </th>
+                    {% endif %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

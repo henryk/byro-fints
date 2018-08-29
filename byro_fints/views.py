@@ -1,19 +1,91 @@
 from datetime import date
+from contextlib import contextmanager
 
 from django import forms
 from django.db import transaction
 from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
-from django.views.generic import CreateView, FormView, ListView
+from django.views.generic import CreateView, FormView, ListView, TemplateView
 from django.views.generic.detail import SingleObjectMixin
-from fints.client import FinTS3PinTanClient
+from django.contrib import messages
+from fints.client import FinTS3PinTanClient, FinTSOperations
+from fints.exceptions import *
 from fints.models import SEPAAccount
 from mt940 import models as mt940_models
+import fints.parser
+fints.parser.robust_mode = True
 
 from byro.bookkeeping.models import Account, Transaction, Booking
 
 from .data import get_bank_information_by_blz
 from .models import FinTSAccount, FinTSLogin
+
+PIN_CACHED_SENTINEL = '******'
+def _cache_label(fints_login):
+    return 'byro_fints__pin__{}__cache'.format(fints_login.pk)
+
+
+class FinTSClientFormMixin:
+    def get_form(self, *args, **kwargs):
+        form = super().get_form(*args, **kwargs)
+        fints_login = self.get_object()
+        if isinstance(fints_login, FinTSAccount):
+            fints_login = fints_login.login
+        fints_user_login, _ignore = fints_login.user_login.get_or_create(user=self.request.user)
+        form.fields['login_name'].initial = fints_user_login.login_name
+        form.fields['pin'].label = _('PIN for \'{display_name}\'').format(
+            display_name=fints_login.name
+        )
+        if _cache_label(fints_login) in self.request.securebox:
+            form.fields['pin'].initial = PIN_CACHED_SENTINEL
+        return form
+
+    @contextmanager
+    def fints_client(self, fints_login, form=None):
+        fints_user_login, _ignore = fints_login.user_login.get_or_create(user=self.request.user)
+        if form:
+            fints_user_login.login_name = form.cleaned_data['login_name']
+            if form.cleaned_data['pin'] == PIN_CACHED_SENTINEL:
+                pin = self.request.securebox[_cache_label(fints_login)]
+            else:
+                pin = form.cleaned_data['pin']
+        else:
+            pin = None
+
+        client = FinTS3PinTanClient(
+            fints_login.blz,
+            fints_user_login.login_name,
+            pin,
+            fints_login.fints_url,
+            set_data=bytes(fints_user_login.fints_client_data) if fints_user_login.fints_client_data else None,
+        )
+        client.add_response_callback(self.fints_callback)
+
+        try:
+            yield client
+            pin_correct = True
+
+        except FinTSClientPINError:
+            # PIN wrong, clear cached PIN, indicate error
+            self.request.securebox.delete_value(_cache_label(fints_login))
+            if form:
+                form.add_error(None, "Can't establish FinTS dialog: Username/PIN wrong?")
+            pin_correct = False
+
+        if pin_correct and form:
+            fints_user_login.fints_client_data = client.get_data(including_private=True)
+            fints_user_login.save()
+
+            if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
+                self.request.securebox.store_value(_cache_label(fints_login), form.cleaned_data['pin'])
+
+    def fints_callback(self, segment, response):
+        if response.code.startswith('0'):
+            messages.info(self.request, "{} \u2014 {}".format(response.code, response.text))
+        elif response.code.startswith('9'):
+            messages.error(self.request, "{} \u2014 {}".format(response.code, response.text))
+        elif response.code.startswith('0'):
+            messages.warning(self.request, "{} \u2014 {}".format(response.code, response.text))
 
 
 class Dashboard(ListView):
@@ -30,7 +102,7 @@ class Dashboard(ListView):
 class FinTSLoginCreateView(CreateView):
     template_name = 'byro_fints/login_add.html'
     model = FinTSLogin
-    form_class = forms.modelform_factory(FinTSLogin, fields=['blz', 'login_name', 'name', 'fints_url'])
+    form_class = forms.modelform_factory(FinTSLogin, fields=['blz', 'name', 'fints_url'])
     success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
 
     def get_form(self, *args, **kwargs):
@@ -53,15 +125,11 @@ class FinTSLoginCreateView(CreateView):
 
 class PinRequestForm(forms.Form):
     form_name = _("PIN request")
+    login_name = forms.CharField(label=_("Login name"))
     pin = forms.CharField(label=_("PIN"), widget=forms.PasswordInput(render_value=True))
 
 
-PIN_CACHED_SENTINEL = '******'
-def _cache_label(fints_login):
-    return 'byro_fints__pin__{}__cache'.format(fints_login.pk)
-
-
-class FinTSLoginRefreshView(SingleObjectMixin, FormView):
+class FinTSLoginRefreshView(SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/login_refresh.html'
     form_class = PinRequestForm
     success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
@@ -72,32 +140,14 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
     def object(self):
         return self.get_object()  # FIXME: WTF?  Apparently I'm supposed to implement a get()/post() that sets self.object?
 
-    def get_form(self, *args, **kwargs):
-        form = super().get_form(*args, **kwargs)
-        fints_login = self.get_object()
-        form.fields['pin'].label = _('PIN for \'{login_name}\' at \'{display_name}\'').format(
-            login_name=fints_login.login_name,
-            display_name=fints_login.name
-        )
-        if _cache_label(fints_login) in self.request.securebox:
-            form.fields['pin'].initial = PIN_CACHED_SENTINEL
-        return form
-
     def form_valid(self, form):
         fints_login = self.get_object()
-        client = FinTS3PinTanClient(
-            fints_login.blz,
-            fints_login.login_name,
-            self.request.securebox[_cache_label(fints_login)]
-                if form.cleaned_data['pin'] == PIN_CACHED_SENTINEL
-                else form.cleaned_data['pin'],
-            fints_login.fints_url
-        )
+        with self.fints_client(fints_login, form) as client:
+            with client:
+                accounts = client.get_sepa_accounts()
 
-        accounts = client.get_sepa_accounts()
-
-        if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
-            self.request.securebox.store_value(_cache_label(fints_login), form.cleaned_data['pin'])
+        if form.errors:
+            return super().form_invalid(form)
 
         for account in accounts:
             FinTSAccount.objects.get_or_create(
@@ -137,11 +187,35 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
         return super().form_valid(form)
 
 
+class FinTSAccountInformationView(SingleObjectMixin, FinTSClientFormMixin, TemplateView):
+    template_name = 'byro_fints/account_information.html'
+    model = FinTSAccount
+    context_object_name = 'fints_account'
+
+    @property
+    def object(self):
+        return self.get_object()
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        fints_account = self.get_object()
+        with self.fints_client(fints_account.login) as client:
+            context['information'] = client.get_information()
+        for account in context['information']['accounts']:
+            if (account['iban'] == fints_account.iban) or (account['account_number'] == fints_account.accountnumber and account['subaccount_number'] == fints_account.subaccount):
+                context['account_information'] = account
+                break
+            else:
+                context['account_information'] = None
+        context['OPERATIONS'] = list(FinTSOperations)
+        return context
+
+
 class PinRequestAndDateForm(PinRequestForm):
     fetch_from_date = forms.DateField(label=_("Fetch start date"), required=True)
 
 
-class FinTSAccountFetchView(SingleObjectMixin, FormView):
+class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/account_fetch.html'
     form_class = PinRequestAndDateForm
     success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
@@ -155,13 +229,6 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
         fints_account = self.get_object()
-        fints_login = fints_account.login
-        form.fields['pin'].label = _('PIN for \'{login_name}\' at \'{display_name}\'').format(
-            login_name=fints_login.login_name,
-            display_name=fints_login.name
-        )
-        if _cache_label(fints_login) in self.request.securebox:
-            form.fields['pin'].initial = PIN_CACHED_SENTINEL
         form.fields['fetch_from_date'].initial = fints_account.last_fetch_date or date.today().replace(day=1, month=1)
         # FIXME Check for plus/minus 1 day
         return form
@@ -169,15 +236,6 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
     @transaction.atomic
     def form_valid(self, form):
         fints_account = self.get_object()
-        fints_login = fints_account.login
-        client = FinTS3PinTanClient(
-            fints_login.blz,
-            fints_login.login_name,
-            self.request.securebox[_cache_label(fints_login)]
-                if form.cleaned_data['pin'] == PIN_CACHED_SENTINEL
-                else form.cleaned_data['pin'],
-            fints_login.fints_url
-        )
 
         sepa_account = SEPAAccount(
             **{
@@ -186,10 +244,12 @@ class FinTSAccountFetchView(SingleObjectMixin, FormView):
             }
         )
 
-        transactions = client.get_statement(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
+        with self.fints_client(fints_account.login, form) as client:
+            with client:
+                transactions = client.get_statement(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
 
-        if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
-            self.request.securebox.store_value(_cache_label(fints_login), form.cleaned_data['pin'])
+        if form.errors:
+            return super().form_invalid(form)
 
         for t in transactions:
             originator = "{} {} {}".format(

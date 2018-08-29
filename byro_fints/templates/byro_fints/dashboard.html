@@ -67,6 +67,7 @@
                                 <span class="fa fa-download" title="{% trans "Fetch transactions" %}"></span><span class="sr-only">{% trans "Fetch transactions" %}</span>
                             </a>
                         {% endif %}
+                        <a href="{% url "plugins:byro_fints:finance.fints.account.information" pk=account.pk %}" class="btn btn-success"><span class="fa fa-info" title="{% trans "Account information" %}"></span><span class="sr-only">{% trans "Account information" %}</span></a>
                     </td>
                 </tr>
             {% endfor %}

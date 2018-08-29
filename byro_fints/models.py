@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 
 
@@ -17,12 +18,6 @@ class FinTSLogin(models.Model):
         null=False, blank=False,
     )
 
-    login_name = models.CharField(
-        verbose_name=_('Login name/Legitimation ID'),
-        max_length=100,
-        null=False, blank=False,
-    )
-
     fints_url = models.CharField(
         verbose_name=_('FinTS URL'),
         max_length=256,
@@ -32,6 +27,29 @@ class FinTSLogin(models.Model):
     @property
     def is_usable(self):
         return bool(self.blz and self.login_name and self.fints_url)
+
+class FinTSUserLogin(models.Model):
+    login = models.ForeignKey(
+        to='byro_fints.FinTSLogin',
+        on_delete=models.CASCADE,
+        related_name='user_login',
+        blank=True,
+    )
+
+    user = models.ForeignKey(
+        to=settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='+',
+        blank=True,
+    )
+
+    login_name = models.CharField(
+        verbose_name=_('Login name/Legitimation ID'),
+        max_length=100,
+        null=False, blank=False,
+    )
+
+    fints_client_data = models.BinaryField(verbose_name='Stored FinTS client data', null=True, blank=True)
 
 
 class FinTSAccount(models.Model):
@@ -54,7 +72,7 @@ class FinTSAccount(models.Model):
     iban = models.CharField(max_length=35, null=False, blank=False)
     bic = models.CharField(max_length=35, null=False, blank=False)
     accountnumber = models.CharField(max_length=35, null=False, blank=False)
-    subaccount = models.CharField(max_length=35, null=False, blank=False)
+    subaccount = models.CharField(max_length=35, null=True, blank=True)
     blz = models.CharField(max_length=35, null=False, blank=False)
 
     last_fetch_date = models.DateField(null=True)
