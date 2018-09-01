@@ -1,5 +1,6 @@
 {% extends "byro_fints/base.html" %}
 {% load i18n %}
+{% load my_filters %}
 
 {% block fints_heading %}{% trans "Dashboard" %}{% endblock %}
 
@@ -14,7 +15,6 @@
         <thead>
             <tr>
                 <th class="table-column-small">{% trans "BLZ" %}</th>
-                <th class="table-column-small">{% trans "Login name" %}</th>
                 <th class="table-column-large">{% trans "Name" %}</th>
                 <th class="table-column-large">{% trans "FinTS URL" %}</th>
                 <th>{% trans "Actions" %}</th>
@@ -24,10 +24,12 @@
             {% for login in fints_logins %}
                 <tr>
                     <td>{{ login.blz }}</td>
-                    <td>{{ login.login_name }}</td>
                     <td>{{ login.name }}</td>
                     <td>{{ login.fints_url }}</td>
                     <td>
+                        <a href="{% url "plugins:byro_fints:finance.fints.login.edit" pk=login.pk %}" class="btn btn-success">
+                            <span class="fa fa-pencil" title="{% trans "Edit login data" %}"></span><span class="sr-only">{% trans "Edit login data" %}</span>
+                        </a>
                         <a href="{% url "plugins:byro_fints:finance.fints.login.refresh" pk=login.pk %}" class="btn btn-success">
                             <span class="fa fa-refresh" title="{% trans "Refresh account data" %}"></span><span class="sr-only">{% trans "Refresh account data" %}</span>
                         </a>
@@ -42,6 +44,7 @@
         <thead>
             <tr>
                 <th>{% trans "Bank login" %}</th>
+                <th>{% trans "Account name" %}</th>
                 <th>{% trans "IBAN" %}</th>
                 <th>{% trans "BIC" %}</th>
                 <th class="table-column-large">{% trans "Linked to account" %}</th>
@@ -52,7 +55,8 @@
             {% for account in fints_accounts %}
                 <tr>
                     <td>{{ account.login.name }}</td>
-                    <td>{{ account.iban }}</td>
+                    <td>{{ account.name }}</td>
+                    <td>{{ account.iban|format_iban }}</td>
                     <td>{{ account.bic }}</td>
                     <td>
                         {% if account.account %}

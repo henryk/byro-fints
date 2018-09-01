@@ -26,7 +26,7 @@ class FinTSLogin(models.Model):
 
     @property
     def is_usable(self):
-        return bool(self.blz and self.login_name and self.fints_url)
+        return bool(self.blz and self.fints_url)
 
 class FinTSUserLogin(models.Model):
     login = models.ForeignKey(
@@ -74,5 +74,11 @@ class FinTSAccount(models.Model):
     accountnumber = models.CharField(max_length=35, null=False, blank=False)
     subaccount = models.CharField(max_length=35, null=True, blank=True)
     blz = models.CharField(max_length=35, null=False, blank=False)
+
+    name = models.CharField(
+        max_length=100,
+        verbose_name=_('Display name'),
+        null=False, blank=True,
+    )
 
     last_fetch_date = models.DateField(null=True)
