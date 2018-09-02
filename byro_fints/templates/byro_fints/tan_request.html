@@ -1,88 +1,15 @@
 {% extends "byro_fints/base.html" %}
 {% load bootstrap4 %}
 {% load static %}
+{% load compress %}
 {% load i18n %}
 
 {% block fints_heading %}{% trans "Enter TAN …" %}{% endblock %}
 
 {% block stylesheets %}
-<style>
-    .flicker-code {
-        position: relative;
-        margin-left: auto;
-        margin-right: auto;
-        width: 30.5em;
-        height: 15em;
-        background-color: #f70;
-        font-size: 2.8mm;
-    }
-    .flicker-code .flicker-controls {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 30.5em;
-        height: 3em;
-        background-color: #f07;
-    }
-    .flicker-code .flicker-align {
-        position: absolute;
-        top: 3em;
-        left: 0;
-        width: 30.5em;
-        height: 2.5em;
-        background-color: #000;
-    }
-    .flicker-code .flicker-main {
-        position: absolute;
-        top: 5.5em;
-        left: 0;
-        width: 30.5em;
-        height: 9.5em;
-        background-color: #000;
-    }
-    .flicker-code .flicker-chevron-l, .flicker-code .flicker-chevron-r {
-        position: absolute;
-        top: 0.5em;
-        width: 0;
-        height: 0;
-        border-left: 0.75em solid transparent;
-        border-right: 0.75em solid transparent;
-        border-top: 1.5em solid #fff;
-    }
-    .flicker-code .flicker-chevron-l {
-        left: 2.5em;
-    }
-    .flicker-code .flicker-chevron-r {
-        left: 26.5em;
-    }
-    .flicker-code .flicker-bar {
-        position: absolute;
-        top: 0.5em;
-        height: 8.5em;
-        width: 5em;
-        background-color: #fff;
-    }
-    .flicker-code .flicker-bar-0 {
-        left: 0.75em;
-    }
-    .flicker-code .flicker-bar-1 {
-        left: 6.75em;
-    }
-    .flicker-code .flicker-bar-2 {
-        left: 12.75em;
-    }
-    .flicker-code .flicker-bar-3 {
-        left: 18.75em;
-    }
-    .flicker-code .flicker-bar-4 {
-        left: 24.75em;
-    }
-    {% for data, m in view.flicker_map.items %}
-        {% for bit, value in m.items %}
-            .flicker-data-{{data}} .flicker-bar-{{bit}} { display: {% if value %} block {% else %} none {% endif %}; }
-        {% endfor %}
-    {% endfor %}
-</style>
+{% compress css %}
+<link rel="stylesheet" type="text/x-scss" href="{% static "byro_fints/scss/flickertan.scss" %}"/>
+{% endcompress %}
 {% endblock %}
 
 {% block scripts %}
@@ -102,14 +29,12 @@
         {% if challenge_flicker %}
         <div class="card-body">
             <p class="card-text">
-                <div class="flicker-code" data-flicker-content="{{ challenge_flicker }}">
+                <div class="flicker-code flicker-animate-js" data-flicker-content="{{ challenge_flicker }}">
                     <div class="flicker-controls">
                     </div>
-                    <div class="flicker-align">
+                    <div class="flicker-main">
                         <div class="flicker-chevron-l"></div>
                         <div class="flicker-chevron-r"></div>
-                    </div>
-                    <div class="flicker-main">
                         <div class="flicker-bar flicker-bar-0"></div>
                         <div class="flicker-bar flicker-bar-1"></div>
                         <div class="flicker-bar flicker-bar-2"></div>

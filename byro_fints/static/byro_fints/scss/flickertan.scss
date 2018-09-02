@@ -1,0 +1,328 @@
+.flicker-code {
+    position: relative;
+    margin-left: auto;
+    margin-right: auto;
+    width: 31.25em;
+    height: 20em;
+    background-color: #fff;
+    font-size: 3.2mm;
+
+    .flicker-controls {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 31.25em;
+        height: 2.5em;
+        background-color: #fff;
+    }
+
+    .flicker-main {
+        position: absolute;
+        top: 2.5em;
+        left: 0;
+        width: 31.25em;
+        height: 17.5em;
+        background-color: #000;
+        border-radius: 2.5em;
+    }
+
+    .flicker-chevron-l, .flicker-chevron-r {
+        position: absolute;
+        top: 0em;
+        width: 0;
+        height: 0;
+        border-left: 1.25em solid transparent;
+        border-right: 1.25em solid transparent;
+        border-top: 2.5em solid #ddd;
+    }
+    
+    .flicker-chevron-l {
+        left: 3.875em;
+    }
+    
+    .flicker-chevron-r {
+        left: 24.875em;
+    }
+
+    .flicker-bar {
+        position: absolute;
+        top: 2.5em;
+        height: 12.5em;
+        width: 3.9375em;
+        background-color: #fff;
+    }
+
+    .flicker-bar-0 {
+        left: 3.15625em;
+    }
+    .flicker-bar-1 {
+        left: 8.40625em;
+    }
+    .flicker-bar-2 {
+        left: 13.65625em;
+    }
+    .flicker-bar-3 {
+        left: 18.90625em;
+    }
+    .flicker-bar-4 {
+        left: 24.15625em;
+    }
+}
+
+.flicker-animate-js {
+    .flicker-data-0 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-1 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-2 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-3 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-4 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-5 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-6 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-7 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-8 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-9 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-10 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-11 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-12 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-13 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-14 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-15 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  none ; }
+    }
+
+    .flicker-data-16 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-17 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-18 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-19 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-20 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-21 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-22 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-23 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  none ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-24 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-25 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-26 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-27 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  none ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-28 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-29 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  none ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-30 {
+        .flicker-bar-0 { display:  none ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+
+    .flicker-data-31 {
+        .flicker-bar-0 { display:  block ; }
+        .flicker-bar-1 { display:  block ; }
+        .flicker-bar-2 { display:  block ; }
+        .flicker-bar-3 { display:  block ; }
+        .flicker-bar-4 { display:  block ; }
+    }
+}
