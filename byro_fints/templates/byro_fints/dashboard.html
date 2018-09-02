@@ -72,6 +72,7 @@
                             </a>
                         {% endif %}
                         <a href="{% url "plugins:byro_fints:finance.fints.account.information" pk=account.pk %}" class="btn btn-success"><span class="fa fa-info" title="{% trans "Account information" %}"></span><span class="sr-only">{% trans "Account information" %}</span></a>
+                        <a href="{% url "plugins:byro_fints:finance.fints.account.transfer" pk=account.pk %}" class="btn btn-success"><span class="fa fa-send" title="{% trans "SEPA transfer" %}"></span><span class="sr-only">{% trans "SEPA transfer" %}</span></a>
                     </td>
                 </tr>
             {% endfor %}

@@ -1,5 +1,8 @@
+import re
+import bleach
 from datetime import date
 from contextlib import contextmanager
+from base64 import b64encode, b64decode
 
 from django import forms
 from django.db import transaction
@@ -9,12 +12,17 @@ from django.views.generic import CreateView, UpdateView, FormView, ListView, Tem
 from django.views.generic.detail import SingleObjectMixin
 from django.contrib import messages
 from django.http import HttpResponseRedirect
-from fints.client import FinTS3PinTanClient, FinTSOperations
+from django.utils.safestring import mark_safe
+from localflavor.generic.forms import BICFormField, IBANFormField
+from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, TransactionResponse, ResponseStatus
 from fints.exceptions import *
 from fints.models import SEPAAccount
+from fints.hhd.flicker import parse as hhd_flicker_parse
+import fints.formals
 from mt940 import models as mt940_models
 
 from byro.bookkeeping.models import Account, Transaction, Booking
+from byro.common.models import Configuration
 
 from .data import get_bank_information_by_blz
 from .models import FinTSAccount, FinTSLogin, FinTSUserLogin
@@ -39,6 +47,13 @@ def _fetch_update_accounts(fints_login, client, information=None):
         )
         # FIXME: Create accounts in bookeeping?
 
+def _encode_binary_for_session(data):
+  return b64encode(data).decode('us-ascii')
+
+def _decode_binary_for_session(data):
+  return b64decode(data.encode('us-ascii'))
+
+
 class PinRequestForm(forms.Form):
     form_name = _("PIN request")
     login_name = forms.CharField(label=_("Login name"), required=True)
@@ -51,6 +66,16 @@ class LoginCreateForm(PinRequestForm):
     blz = forms.CharField(label=_('Routing number (BLZ)'), required=True)
     name = forms.CharField(label=_('Display name'), required=False)
     fints_url = forms.CharField(label=_('FinTS URL'), required=False)
+
+class SEPATransferForm(PinRequestForm):
+    form_name = _("SEPA transfer")
+    field_order = ['recipient', 'iban', 'bic', 'amount', 'purpose']
+
+    recipient = forms.CharField(label=_('Recipient'), required=True)
+    iban = IBANFormField(label=_("IBAN"), required=True)
+    bic = BICFormField(label=_("BIC"), required=True)
+    amount = forms.DecimalField(label=_('Amount'), required=True)
+    purpose = forms.CharField(label=_('Purpose'), required=True)
 
 class FinTSClientMixin:
     @contextmanager
@@ -191,6 +216,116 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
         if 'tan_method' in form.changed_data:
             with self.fints_client(self.get_object()) as client:
                 client.set_tan_mechanism(form.cleaned_data['tan_method'])
+        return super().form_valid(form)
+
+class TransactionResponseMixin:
+    def _show_messages(self, response):
+        if response.status == ResponseStatus.UNKNOWN:
+            messages.warning(self.request, _("Unknown response. Final transaction status unknown."))
+        elif response.status == ResponseStatus.ERROR:
+            messages.error(self.request, _("Error: Transaction not executed."))
+        elif response.status == ResponseStatus.WARNING:
+            messages.warning(self.request, _("Warning: Transaction warning, see other messages."))
+        elif response.status == ResponseStatus.SUCCESS:
+            messages.success(self.request, _("Transaction executed successfully."))
+
+class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
+    template_name = 'byro_fints/account_transfer.html'
+    form_class = SEPATransferForm
+    model = FinTSAccount
+    success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
+
+    @property
+    def object(self):
+        return self.get_object()
+
+    def form_valid(self, form):
+        config = Configuration.get_solo()
+        fints_account = self.get_object()
+        sepa_account = SEPAAccount(
+            **{
+                name: getattr(fints_account, name)
+                for name in SEPAAccount._fields
+            }
+        )
+        with self.fints_client(fints_account.login, form) as client:
+            with client:
+                response = client.simple_sepa_transfer(
+                    sepa_account,
+                    form.cleaned_data['iban'],
+                    form.cleaned_data['bic'],
+                    form.cleaned_data['recipient'],
+                    form.cleaned_data['amount'],
+                    config.name,
+                    form.cleaned_data['purpose'],
+                )
+                if isinstance(response, TransactionResponse):
+                    self._show_messages(response)
+                elif isinstance(response, NeedTANResponse):
+                    self.request.session['dialog'] = _encode_binary_for_session( client.pause_dialog() )
+                    self.request.session['response'] = _encode_binary_for_session( response.get_data() )
+                    return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.account.tan_request', kwargs={'pk': fints_account.pk}))
+                else:
+                    messages.error(self.request, _("Invalid response: {}".format(response)))
+        return super().form_valid(form)
+
+class FinTSAccountTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
+    template_name = 'byro_fints/account_tan.html'
+    form_class = PinRequestForm
+    model = FinTSAccount
+    success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
+
+    @property
+    def object(self):
+        return self.get_object()
+
+    def get_form(self, *args, **kwargs):
+        form = super().get_form(*args, **kwargs)
+        fints_account = self.get_object()
+        with self.fints_client(fints_account.login) as client:
+            tan_param = client.get_tan_mechanisms()[client.get_current_tan_mechanism()]
+            # Do not use tan_param.allowed_format, because IntegerField is not the same as AllowedFormat.NUMERIC
+            # FIXME
+            form.fields['tan'] = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
+        return form
+
+    def flicker_map(self):
+        return {
+            k: {
+                i: bool( (k >> i) & 1 )
+                for i in range(5)
+            }
+            for k in range(32)
+        }
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        response = NeedTANResponse.from_data(_decode_binary_for_session(self.request.session['response']))
+
+        context['challenge'] = mark_safe( response.challenge_html )
+
+        if response.challenge_hhduc:
+            flicker = hhd_flicker_parse(response.challenge_hhduc)
+            context['challenge_flicker'] = flicker.render()
+
+        return context
+
+    def form_valid(self, form):
+        fints_account = self.get_object()
+        dialog_data = _decode_binary_for_session(self.request.session['dialog'])
+        tan_data = _decode_binary_for_session(self.request.session['response'])
+        del self.request.session['dialog']
+        del self.request.session['response']
+
+        response = NeedTANResponse.from_data(tan_data)
+
+        with self.fints_client(fints_account.login, form) as client:
+            with client.resume_dialog(dialog_data):
+                response = client.send_tan(response, form.cleaned_data['tan'].strip())
+                if isinstance(response, TransactionResponse):
+                    self._show_messages(response)
+                else:
+                    messages.error(self.request, _("Invalid response: {}".format(response)))
         return super().form_valid(form)
 
 
