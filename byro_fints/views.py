@@ -1,8 +1,10 @@
 import re
 import bleach
+from uuid import uuid4
 from datetime import date
 from contextlib import contextmanager
 from base64 import b64encode, b64decode
+from django_securebox.utils import Storage
 
 from django import forms
 from django.db import transaction
@@ -229,6 +231,41 @@ class TransactionResponseMixin:
         elif response.status == ResponseStatus.SUCCESS:
             messages.success(self.request, _("Transaction executed successfully."))
 
+    def _tan_request(self, fints_login, client, response, **kwargs):
+        uuid = uuid4()
+        data = {
+            'tan_mechanism': client.get_current_tan_mechanism(),
+            'dialog': client.pause_dialog(),
+            'response': response.get_data(),
+        }
+        data.update(kwargs)
+
+        self.request.securebox.store_value("tan_request_{}".format(uuid), data, Storage.TRANSIENT_ONLY)
+
+        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request', kwargs={'pk': fints_login.pk, 'uuid': uuid}))
+
+    def _tan_request_data(self):
+        # FIXME Raise 404
+        if self.kwargs['uuid'] == 'test_data':
+            class Dummy(NeedTANResponse):
+                def __init__(self, *args, **kwargs):
+                    pass
+            data = {
+                'tan_mechanism': None,
+                'dialog': None,
+                'response': Dummy(),
+            }
+            data['response'].challenge_html = "Yada"
+            data['response'].challenge_hhduc = '02908881344731012345678900515,00'
+            return data
+
+        data = self.request.securebox.fetch_value('tan_request_{}'.format(self.kwargs['uuid']))
+        data['response'] = NeedTANResponse.from_data(data['response'])
+        return data
+
+    def _tan_request_done(self):
+        self.request.securebox.delete_value('tan_request_{}'.format(self.kwargs['uuid']))
+
 class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/account_transfer.html'
     form_class = SEPATransferForm
@@ -262,17 +299,15 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
                 if isinstance(response, TransactionResponse):
                     self._show_messages(response)
                 elif isinstance(response, NeedTANResponse):
-                    self.request.session['dialog'] = _encode_binary_for_session( client.pause_dialog() )
-                    self.request.session['response'] = _encode_binary_for_session( response.get_data() )
-                    return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.account.tan_request', kwargs={'pk': fints_account.pk}))
+                    return self._tan_request(fints_account.login, client, response)
                 else:
                     messages.error(self.request, _("Invalid response: {}".format(response)))
         return super().form_valid(form)
 
-class FinTSAccountTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
-    template_name = 'byro_fints/account_tan.html'
+class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
+    template_name = 'byro_fints/tan_request.html'
     form_class = PinRequestForm
-    model = FinTSAccount
+    model = FinTSLogin
     success_url = reverse_lazy('plugins:byro_fints:finance.fints.dashboard')
 
     @property
@@ -281,9 +316,10 @@ class FinTSAccountTANRequestView(TransactionResponseMixin, SingleObjectMixin, Fi
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
-        fints_account = self.get_object()
-        with self.fints_client(fints_account.login) as client:
-            tan_param = client.get_tan_mechanisms()[client.get_current_tan_mechanism()]
+        fints_login = self.get_object()
+        tan_request_data = self._tan_request_data()
+        with self.fints_client(fints_login) as client:
+            tan_param = client.get_tan_mechanisms()[tan_request_data['tan_mechanism'] or client.get_current_tan_mechanism()]
             # Do not use tan_param.allowed_format, because IntegerField is not the same as AllowedFormat.NUMERIC
             # FIXME
             form.fields['tan'] = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
@@ -300,32 +336,28 @@ class FinTSAccountTANRequestView(TransactionResponseMixin, SingleObjectMixin, Fi
 
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
-        response = NeedTANResponse.from_data(_decode_binary_for_session(self.request.session['response']))
+        tan_request_data = self._tan_request_data()
 
-        context['challenge'] = mark_safe( response.challenge_html )
+        context['challenge'] = mark_safe( tan_request_data['response'].challenge_html )
 
-        if response.challenge_hhduc:
-            flicker = hhd_flicker_parse(response.challenge_hhduc)
+        if tan_request_data['response'].challenge_hhduc:
+            flicker = hhd_flicker_parse(tan_request_data['response'].challenge_hhduc)
             context['challenge_flicker'] = flicker.render()
 
         return context
 
     def form_valid(self, form):
-        fints_account = self.get_object()
-        dialog_data = _decode_binary_for_session(self.request.session['dialog'])
-        tan_data = _decode_binary_for_session(self.request.session['response'])
-        del self.request.session['dialog']
-        del self.request.session['response']
+        tan_request_data = self._tan_request_data()
+        fints_login = self.get_object()
 
-        response = NeedTANResponse.from_data(tan_data)
-
-        with self.fints_client(fints_account.login, form) as client:
-            with client.resume_dialog(dialog_data):
-                response = client.send_tan(response, form.cleaned_data['tan'].strip())
+        with self.fints_client(fints_login, form) as client:
+            with client.resume_dialog(tan_request_data['dialog']):
+                response = client.send_tan(tan_request_data['response'], form.cleaned_data['tan'].strip())
                 if isinstance(response, TransactionResponse):
                     self._show_messages(response)
                 else:
                     messages.error(self.request, _("Invalid response: {}".format(response)))
+        self._tan_request_done()
         return super().form_valid(form)
 
 
