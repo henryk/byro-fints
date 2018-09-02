@@ -325,14 +325,42 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
             form.fields['tan'] = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
         return form
 
-    def flicker_map(self):
-        return {
-            k: {
-                i: bool( (k >> i) & 1 )
-                for i in range(5)
-            }
-            for k in range(32)
-        }
+    def get_flicker_css(self, data, css_class):
+        stream = [1, 0, 31, 30, 31, 30]
+        for i in range(len(data)):
+            d = int(data[i ^ 1], 16)
+            stream.append( 1 | (d << 1) )
+            stream.append( 0 | (d << 1) )
+
+        last = 0
+        per_frame = 100.0 / float(len(stream))
+        duration = 0.025 * len(stream)
+
+        keyframes = [[] for i in range(5) ]
+
+        for index, frame in enumerate(stream):
+            for bit_index in range(5):
+                if (frame >> bit_index) & 1:
+                    color = '#fff'
+                else:
+                    color = '#000'
+                keyframes[bit_index].append( r"{}% {{ background-color: {}; }}".format(index*per_frame, color) )
+
+        result = [
+            "@keyframes {css_class}-bar-{i} {{ {k} }}".format(k=" ".join(kf), i=i, css_class=css_class)
+            for i,kf in enumerate(keyframes)
+        ]
+        result.extend(
+            """.flicker-animate-css.{css_class} .flicker-bar-{i} {{
+                animation-name: {css_class}-bar-{i};
+                animation-duration: {duration}s;
+                animation-iteration-count: infinite;
+                animation-timing-function: step-end;
+            }}""".format(i=i, css_class=css_class, duration=duration) for i in range(5)
+        )
+
+        return "\n".join(result)
+
 
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
@@ -343,6 +371,10 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
         if tan_request_data['response'].challenge_hhduc:
             flicker = hhd_flicker_parse(tan_request_data['response'].challenge_hhduc)
             context['challenge_flicker'] = flicker.render()
+
+            css_class = 'flicker-{}'.format(uuid4())
+            context['challenge_flicker_css_class'] = css_class
+            context['challenge_flicker_css'] = lambda: self.get_flicker_css(flicker.render(), css_class)
 
         return context
 

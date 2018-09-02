@@ -10,6 +10,9 @@
 {% compress css %}
 <link rel="stylesheet" type="text/x-scss" href="{% static "byro_fints/scss/flickertan.scss" %}"/>
 {% endcompress %}
+<style>
+ {{ challenge_flicker_css }}
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -29,7 +32,7 @@
         {% if challenge_flicker %}
         <div class="card-body">
             <p class="card-text">
-                <div class="flicker-code flicker-animate-js" data-flicker-content="{{ challenge_flicker }}">
+                <div class="flicker-code flicker-animate-css {{ challenge_flicker_css_class }}" data-flicker-content="{{ challenge_flicker }}">
                     <div class="flicker-controls">
                     </div>
                     <div class="flicker-main">
