@@ -339,23 +339,31 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
         keyframes = [[] for i in range(5) ]
 
         for index, frame in enumerate(stream):
+            changed = frame ^ last
+            last = frame
+            if index == 0:
+                changed = 31
             for bit_index in range(5):
                 if (frame >> bit_index) & 1:
                     color = '#fff'
                 else:
                     color = '#000'
-                keyframes[bit_index].append( r"{}% {{ background-color: {}; }}".format(index*per_frame, color) )
+                if (changed >> bit_index) & 1:
+                    keyframes[bit_index].append( r"{}% {{ background-color: {}; }}".format(index*per_frame, color) )
 
         result = [
             "@keyframes {css_class}-bar-{i} {{ {k} }}".format(k=" ".join(kf), i=i, css_class=css_class)
             for i,kf in enumerate(keyframes)
         ]
         result.extend(
-            """.flicker-animate-css.{css_class} .flicker-bar-{i} {{
-                animation-name: {css_class}-bar-{i};
+            """
+            .flicker-animate-css .flicker-bar {{
                 animation-duration: {duration}s;
                 animation-iteration-count: infinite;
                 animation-timing-function: step-end;
+            }}
+            .flicker-animate-css.{css_class} .flicker-bar-{i} {{
+                animation-name: {css_class}-bar-{i};
             }}""".format(i=i, css_class=css_class, duration=duration) for i in range(5)
         )
 

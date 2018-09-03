@@ -23,6 +23,7 @@ $(function(){
         };
 
         var start = function() {
+            $(fdiv).removeClass('flicker-animate-css');
             $(fdiv).addClass('flicker-animate-js');
             update();
         };
