@@ -60,6 +60,15 @@ class PinRequestForm(forms.Form):
     form_name = _("PIN request")
     login_name = forms.CharField(label=_("Login name"), required=True)
     pin = forms.CharField(label=_("PIN"), widget=forms.PasswordInput(render_value=True), required=True)
+    store_pin = forms.ChoiceField(
+        label=_("Store PIN?"),
+        choices=[
+            ['0', _("Don't store PIN")],
+            ['1', _("For this login session only")],
+            ['2', _("Store PIN (encrypted with account password)")]
+        ],
+        initial='0'
+    )
 
 class LoginCreateForm(PinRequestForm):
     form_name = _("Create FinTS login")
@@ -117,8 +126,18 @@ class FinTSClientMixin:
             fints_user_login.save()
 
             if form:
-                if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
-                    self.request.securebox.store_value(_cache_label(fints_login), form.cleaned_data['pin'])
+                if form.cleaned_data['store_pin'] == '1':
+                    storage = Storage.TRANSIENT_ONLY
+                elif form.cleaned_data['store_pin'] == '2':
+                    storage = Storage.PERMANENT_ONLY
+                else:
+                    storage = None
+
+                if storage:
+                    if form.cleaned_data['pin'] != PIN_CACHED_SENTINEL:
+                        self.request.securebox.store_value(_cache_label(fints_login), pin, storage=storage)
+                else:
+                    self.request.securebox.delete_value(_cache_label(fints_login))
 
     def fints_callback(self, segment, response):
         if response.code.startswith('0'):
@@ -129,6 +148,13 @@ class FinTSClientMixin:
             messages.warning(self.request, "{} \u2014 {}".format(response.code, response.text))
 
 class FinTSClientFormMixin(FinTSClientMixin):
+    def _pin_store_location(self, fints_login):
+        if self.request.securebox.fetch_value(_cache_label(fints_login), Storage.TRANSIENT_ONLY, default=None) is not None:
+            return '1'
+        elif self.request.securebox.fetch_value(_cache_label(fints_login), Storage.PERMANENT_ONLY, default=None) is not None:
+            return '2'
+        return '0'
+
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
         fints_login = self.get_object()
@@ -139,8 +165,12 @@ class FinTSClientFormMixin(FinTSClientMixin):
         form.fields['pin'].label = _('PIN for \'{display_name}\'').format(
             display_name=fints_login.name
         )
-        if _cache_label(fints_login) in self.request.securebox:
+        form.fields['store_pin'].initial = self._pin_store_location(fints_login)
+        if form.fields['store_pin'].initial != '0':
             form.fields['pin'].initial = PIN_CACHED_SENTINEL
+            form.fields['login_name'].widget = forms.HiddenInput()
+            form.fields['pin'].widget = forms.HiddenInput()
+            form.fields['store_pin'].widget = forms.HiddenInput()
         return form
 
 class Dashboard(ListView):
