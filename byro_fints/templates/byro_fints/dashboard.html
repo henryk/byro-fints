@@ -4,6 +4,19 @@
 
 {% block fints_heading %}{% trans "Dashboard" %}{% endblock %}
 
+{% block stylesheets %}
+<style>
+    .btn-group-rounded a:first-of-type.btn {
+        border-top-left-radius: 1em;
+        border-bottom-left-radius: 1em;
+    }
+    .btn-group-rounded a:last-of-type.btn {
+        border-top-right-radius: 1em;
+        border-bottom-right-radius: 1em;
+    }
+</style>
+{% endblock %}
+
 {% block fints_content %}
     <p>{% blocktrans %}
         To use the FinTS functionality, you need to create a bank login and fetch the account list. Then you can link the FinTS accounts to existing or new accounts in the bookkeeping module.
@@ -66,13 +79,15 @@
                         {% endif %}
                     </td>
                     <td>
-                        {% if account.account %}
-                            <a href="{% url "plugins:byro_fints:finance.fints.account.fetch" pk=account.pk %}" class="btn btn-success">
-                                <span class="fa fa-download" title="{% trans "Fetch transactions" %}"></span><span class="sr-only">{% trans "Fetch transactions" %}</span>
-                            </a>
-                        {% endif %}
-                        <a href="{% url "plugins:byro_fints:finance.fints.account.information" pk=account.pk %}" class="btn btn-success"><span class="fa fa-info" title="{% trans "Account information" %}"></span><span class="sr-only">{% trans "Account information" %}</span></a>
-                        <a href="{% url "plugins:byro_fints:finance.fints.account.transfer" pk=account.pk %}" class="btn btn-success"><span class="fa fa-send" title="{% trans "SEPA transfer" %}"></span><span class="sr-only">{% trans "SEPA transfer" %}</span></a>
+                        <div class="btn-group btn-group-rounded">
+                            <a href="{% url "plugins:byro_fints:finance.fints.account.information" pk=account.pk %}" class="btn btn-success"><span class="fa fa-info" title="{% trans "Account information" %}"></span><span class="sr-only">{% trans "Account information" %}</span></a>
+                            <a href="{% url "plugins:byro_fints:finance.fints.account.transfer" pk=account.pk %}" class="btn btn-success"><span class="fa fa-send" title="{% trans "SEPA transfer" %}"></span><span class="sr-only">{% trans "SEPA transfer" %}</span></a>
+                            {% if account.account %}
+                                <a href="{% url "plugins:byro_fints:finance.fints.account.fetch" pk=account.pk %}" class="btn btn-success">
+                                    <span class="fa fa-download" title="{% trans "Fetch transactions" %}"></span><span class="sr-only">{% trans "Fetch transactions" %}</span>
+                                </a>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
             {% endfor %}

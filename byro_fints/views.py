@@ -155,7 +155,7 @@ class FinTSClientFormMixin(FinTSClientMixin):
             return '2'
         return '0'
 
-    def get_form(self, *args, **kwargs):
+    def get_form(self, extra_fields={}, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
         fints_login = self.get_object()
         if isinstance(fints_login, FinTSAccount):
@@ -166,11 +166,15 @@ class FinTSClientFormMixin(FinTSClientMixin):
             display_name=fints_login.name
         )
         form.fields['store_pin'].initial = self._pin_store_location(fints_login)
+        form.fields.update(extra_fields)
         if form.fields['store_pin'].initial != '0':
             form.fields['pin'].initial = PIN_CACHED_SENTINEL
-            form.fields['login_name'].widget = forms.HiddenInput()
-            form.fields['pin'].widget = forms.HiddenInput()
-            form.fields['store_pin'].widget = forms.HiddenInput()
+
+            # Hide PIN fields if more than the PIN fields are present
+            maybe_hidden_fields = ['login_name', 'pin', 'store_pin']
+            if any(name not in maybe_hidden_fields for name in form.fields.keys()):
+                for name in maybe_hidden_fields:
+                    form.fields[name].widget = forms.HiddenInput()
         return form
 
 class Dashboard(ListView):
@@ -345,14 +349,19 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
         return self.get_object()
 
     def get_form(self, *args, **kwargs):
-        form = super().get_form(*args, **kwargs)
         fints_login = self.get_object()
         tan_request_data = self._tan_request_data()
+
         with self.fints_client(fints_login) as client:
             tan_param = client.get_tan_mechanisms()[tan_request_data['tan_mechanism'] or client.get_current_tan_mechanism()]
             # Do not use tan_param.allowed_format, because IntegerField is not the same as AllowedFormat.NUMERIC
             # FIXME
-            form.fields['tan'] = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
+            tan_field = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
+
+        form = super().get_form(extra_fields={
+                'tan': tan_field,
+            }, *args, **kwargs)
+
         return form
 
     def get_flicker_css(self, data, css_class):

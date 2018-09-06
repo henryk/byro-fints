@@ -5,7 +5,6 @@
 {% block fints_heading %}{% trans "Fetch transactions …" %}{% endblock %}
 
 {% block fints_content %}
-	<h4>{% blocktrans %}PIN request{% endblocktrans %}</h4>
     <form method="post">
         {% csrf_token %}
         {% bootstrap_form form layout='horizontal' %}
