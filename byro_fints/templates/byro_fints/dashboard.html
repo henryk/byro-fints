@@ -56,27 +56,27 @@
     <table class="table table-sm">
         <thead>
             <tr>
-                <th>{% trans "Bank login" %}</th>
-                <th>{% trans "Account name" %}</th>
-                <th>{% trans "IBAN" %}</th>
-                <th>{% trans "BIC" %}</th>
-                <th class="table-column-large">{% trans "Linked to account" %}</th>
+                <th class="table-column-medium">{% trans "Linked to account" %}</th>
+                <th class="table-column-large"></th>
                 <th>{% trans "Actions" %}</th>
             </tr>
         </thead>
         <tbody>
             {% for account in fints_accounts %}
                 <tr>
-                    <td>{{ account.login.name }}</td>
-                    <td>{{ account.name }}</td>
-                    <td>{{ account.iban|format_iban }}</td>
-                    <td>{{ account.bic }}</td>
                     <td>
                         {% if account.account %}
                             {{ account.account.name }}<!-- FIXME Allow editing/re-linking -->
                         {% else %}
                             <a href="{% url "plugins:byro_fints:finance.fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
                         {% endif %}
+                    </td>
+                    <td>
+                        <strong class="mb-2">{{ account.name }}</strong>
+                        <div class="float-sm-right">{{ account.login.name }}</div>
+                        <div class="clearfix"></div>
+                        <span style="display: inline-block; width: 3em; text-align: right; opacity: 0.6;">IBAN:</span>&nbsp;{{ account.iban|format_iban }}<br>
+                        <span style="display: inline-block; width: 3em; text-align: right; opacity: 0.6;">BIC:</span>&nbsp;{{ account.bic }}
                     </td>
                     <td>
                         <div class="btn-group btn-group-rounded">
