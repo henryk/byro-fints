@@ -12,30 +12,6 @@
     </form>
 
     <h4 class="mt-3">{% trans "Associated bank accounts" %}</h4>
-    <table class="table table-sm">
-        <thead>
-            <tr>
-                <th>{% trans "Account name" %}</th>
-                <th>{% trans "IBAN" %}</th>
-                <th>{% trans "BIC" %}</th>
-                <th class="table-column-large">{% trans "Linked to account" %}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for account in fints_login.accounts.all %}
-                <tr>
-                    <td>{{ account.name }}</td>
-                    <td>{{ account.iban }}</td>
-                    <td>{{ account.bic }}</td>
-                    <td>
-                        {% if account.account %}
-                            {{ account.account.name }}<!-- FIXME Allow editing/re-linking -->
-                        {% else %}
-                            <a href="{% url "plugins:byro_fints:finance.fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
-                        {% endif %}
-                    </td>
-            {% endfor %}
-        </tbody>
-    </table>
+    {% include "byro_fints/snippet_account_list.html" with account_list=fints_login.accounts.all %}
 
 {% endblock %}

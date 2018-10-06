@@ -53,45 +53,6 @@
     </table>
 
     <h4>{% trans "Known bank accounts" %}</h4>
-    <table class="table table-sm">
-        <thead>
-            <tr>
-                <th class="table-column-medium">{% trans "Linked to account" %}</th>
-                <th class="table-column-large"></th>
-                <th>{% trans "Actions" %}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for account in fints_accounts %}
-                <tr>
-                    <td>
-                        {% if account.account %}
-                            {{ account.account.name }}<!-- FIXME Allow editing/re-linking -->
-                        {% else %}
-                            <a href="{% url "plugins:byro_fints:finance.fints.account.link" pk=account.pk %}">{% trans "Link to existing account …" %}</a>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <strong class="mb-2">{{ account.name }}</strong>
-                        <div class="float-sm-right">{{ account.login.name }}</div>
-                        <div class="clearfix"></div>
-                        <span style="display: inline-block; width: 3em; text-align: right; opacity: 0.6;">IBAN:</span>&nbsp;{{ account.iban|format_iban }}<br>
-                        <span style="display: inline-block; width: 3em; text-align: right; opacity: 0.6;">BIC:</span>&nbsp;{{ account.bic }}
-                    </td>
-                    <td>
-                        <div class="btn-group btn-group-rounded">
-                            <a href="{% url "plugins:byro_fints:finance.fints.account.information" pk=account.pk %}" class="btn btn-success"><span class="fa fa-info" title="{% trans "Account information" %}"></span><span class="sr-only">{% trans "Account information" %}</span></a>
-                            <a href="{% url "plugins:byro_fints:finance.fints.account.transfer" pk=account.pk %}" class="btn btn-success"><span class="fa fa-send" title="{% trans "SEPA transfer" %}"></span><span class="sr-only">{% trans "SEPA transfer" %}</span></a>
-                            {% if account.account %}
-                                <a href="{% url "plugins:byro_fints:finance.fints.account.fetch" pk=account.pk %}" class="btn btn-success">
-                                    <span class="fa fa-download" title="{% trans "Fetch transactions" %}"></span><span class="sr-only">{% trans "Fetch transactions" %}</span>
-                                </a>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    {% include "byro_fints/snippet_account_list.html" with account_list=fints_accounts %}
 
 {% endblock %}
