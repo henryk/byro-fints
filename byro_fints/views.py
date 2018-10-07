@@ -27,11 +27,17 @@ from byro.bookkeeping.models import Account, Transaction, Booking
 from byro.common.models import Configuration
 
 from .data import get_bank_information_by_blz
-from .models import FinTSAccount, FinTSLogin, FinTSUserLogin
+from .models import FinTSAccount, FinTSLogin, FinTSUserLogin, FinTSAccountCapabilities
 
 PIN_CACHED_SENTINEL = '******'
 def _cache_label(fints_login):
     return 'byro_fints__pin__{}__cache'.format(fints_login.pk)
+
+CAPABILITY_MAP = {
+    FinTSAccountCapabilities.FETCH_TRANSACTIONS: (FinTSOperations.GET_TRANSACTIONS, ),
+    FinTSAccountCapabilities.SEND_TRANSFER: (FinTSOperations.SEPA_TRANSFER_SINGLE, FinTSOperations.SEPA_TRANSFER_MULTIPLE),
+    FinTSAccountCapabilities.SEND_TRANSFER_MULTIPLE: (FinTSOperations.SEPA_TRANSFER_MULTIPLE, ),
+}
 
 def _fetch_update_accounts(fints_login, client, information=None):
     accounts = client.get_sepa_accounts()
@@ -42,11 +48,25 @@ def _fetch_update_accounts(fints_login, client, information=None):
         for acc in information['accounts']:
             if acc['iban'] == account.iban:
                 extra_params['name'] = acc['product_name']
-        FinTSAccount.objects.get_or_create(
+
+                caps = 0
+                for cap_provided, caps_searched in CAPABILITY_MAP.items():
+                    if any( 
+                        information['bank']['supported_operations'][cap_searched] 
+                        and acc['supported_operations'][cap_searched]
+                        for cap_searched in caps_searched
+                    ):
+                        caps = caps | cap_provided.value
+                extra_params['caps'] = caps
+
+        account, created = FinTSAccount.objects.get_or_create(
             login=fints_login,
             defaults=extra_params,
             **account._asdict()
         )
+        if account.caps != caps:
+            account.caps = caps
+            account.save()
         # FIXME: Create accounts in bookeeping?
 
 def _encode_binary_for_session(data):
@@ -280,7 +300,7 @@ class TransactionResponseMixin:
 
     def _tan_request_data(self):
         # FIXME Raise 404
-        if self.kwargs['uuid'] == 'test_data':
+        if self.kwargs['uuid'] in ('test_data', 'test_data_2'):
             class Dummy(NeedTANResponse):
                 def __init__(self, *args, **kwargs):
                     pass
@@ -290,7 +310,10 @@ class TransactionResponseMixin:
                 'response': Dummy(),
             }
             data['response'].challenge_html = "Yada"
-            data['response'].challenge_hhduc = '02908881344731012345678900515,00'
+            if self.kwargs['uuid'] == 'test_data':
+                data['response'].challenge_hhduc = '02908881344731012345678900515,00'
+            else:
+                data['response'].challenge_matrix = ('image/png', b64decode("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"))
             return data
 
         data = self.request.securebox.fetch_value('tan_request_{}'.format(self.kwargs['uuid']))
@@ -422,6 +445,12 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
             css_class = 'flicker-{}'.format(uuid4())
             context['challenge_flicker_css_class'] = css_class
             context['challenge_flicker_css'] = lambda: self.get_flicker_css(flicker.render(), css_class)
+
+        if tan_request_data['response'].challenge_matrix:
+            context['challenge_matrix_url'] = 'data:{};base64,{}'.format(
+                tan_request_data['response'].challenge_matrix[0],
+                b64encode(tan_request_data['response'].challenge_matrix[1]).decode('us-ascii')
+            )
 
         return context
 

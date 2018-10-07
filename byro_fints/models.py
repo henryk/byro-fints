@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
+from enum import IntEnum
 
 
 class FinTSLogin(models.Model):
@@ -52,6 +53,12 @@ class FinTSUserLogin(models.Model):
     fints_client_data = models.BinaryField(verbose_name='Stored FinTS client data', null=True, blank=True)
 
 
+class FinTSAccountCapabilities(IntEnum):
+    FETCH_TRANSACTIONS = 1
+    SEND_TRANSFER = 2
+    SEND_TRANSFER_MULTIPLE = 4
+
+
 class FinTSAccount(models.Model):
     form_title = _('FinTS Account')
 
@@ -82,3 +89,11 @@ class FinTSAccount(models.Model):
     )
 
     last_fetch_date = models.DateField(null=True)
+
+    caps = models.BigIntegerField(default=0)
+
+    def can_fetch_transactions(self):
+        return bool(FinTSAccountCapabilities.FETCH_TRANSACTIONS & self.caps)
+
+    def can_send_transfer(self):
+        return bool(FinTSAccountCapabilities.SEND_TRANSFER & self.caps)
