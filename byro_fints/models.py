@@ -2,10 +2,12 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from enum import IntEnum
+from byro.common.models import LogTargetMixin
 
 
-class FinTSLogin(models.Model):
+class FinTSLogin(models.Model, LogTargetMixin):
     form_title = _('FinTS Login Data')
+    LOG_TARGET_BASE = 'byro_fints.login'
 
     name = models.CharField(
         max_length=100,
@@ -59,8 +61,9 @@ class FinTSAccountCapabilities(IntEnum):
     SEND_TRANSFER_MULTIPLE = 4
 
 
-class FinTSAccount(models.Model):
+class FinTSAccount(models.Model, LogTargetMixin):
     form_title = _('FinTS Account')
+    LOG_TARGET_BASE = 'byro_fints.account'
 
     login = models.ForeignKey(
         to='byro_fints.FinTSLogin',

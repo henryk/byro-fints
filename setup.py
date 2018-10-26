@@ -31,8 +31,9 @@ setup(
     author='Henryk Plötz',
     author_email='henryk@ploetzli.ch',
     license='Apache Software License',
-
-    install_requires=['fints>=0.2.1', 'django-securebox'],
+    
+    dependency_links=['git+https://github.com/henryk/python-fints.git@fints-parser#egg=fints-2.0a0'],
+    install_requires=['fints>=2.0a0', 'django-securebox'],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,

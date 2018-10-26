@@ -39,7 +39,7 @@ CAPABILITY_MAP = {
     FinTSAccountCapabilities.SEND_TRANSFER_MULTIPLE: (FinTSOperations.SEPA_TRANSFER_MULTIPLE, ),
 }
 
-def _fetch_update_accounts(fints_login, client, information=None):
+def _fetch_update_accounts(fints_login, client, information=None, view=None):
     accounts = client.get_sepa_accounts()
     information = information or client.get_information()
 
@@ -68,6 +68,10 @@ def _fetch_update_accounts(fints_login, client, information=None):
             account.caps = caps
             account.save()
         # FIXME: Create accounts in bookeeping?
+        if created:
+            account.log(view, '.created')
+        else:
+            account.log(view, '.refreshed')
 
 def _encode_binary_for_session(data):
   return b64encode(data).decode('us-ascii')
@@ -227,6 +231,8 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
                 form.add_error('fints_url', _("FinTS URL could not be looked up automatically, please fill it in manually."))
                 return super().form_invalid(form)
 
+            fints_login.log(self, '.created')
+
             with self.fints_client(fints_login, form) as client:
                 with client:
                     information = client.get_information()
@@ -234,7 +240,7 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
                     if not form.cleaned_data['name'] and information['bank']['name']:
                         fints_login.name = information['bank']['name']
 
-                    _fetch_update_accounts(fints_login, client, information)
+                    _fetch_update_accounts(fints_login, client, information, view=self)
 
             if form.errors:
                 return super().form_invalid(form)
@@ -296,7 +302,7 @@ class TransactionResponseMixin:
 
         self.request.securebox.store_value("tan_request_{}".format(uuid), data, Storage.TRANSIENT_ONLY)
 
-        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request', kwargs={'pk': fints_login.pk, 'uuid': uuid}))
+        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request', kwargs={'pk': fints_login.pk, 'uuid': uuid})), uuid
 
     def _tan_request_data(self):
         # FIXME Raise 404
@@ -342,23 +348,43 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
                 for name in SEPAAccount._fields
             }
         )
+        transfer_log_data = {
+            k: v
+            for k,v in form.cleaned_data.items() if not k in ('pin', 'store_pin')
+        }
+        transfer_log_data['source_account'] = sepa_account._asdict()
         with self.fints_client(fints_account.login, form) as client:
             with client:
-                response = client.simple_sepa_transfer(
-                    sepa_account,
-                    form.cleaned_data['iban'],
-                    form.cleaned_data['bic'],
-                    form.cleaned_data['recipient'],
-                    form.cleaned_data['amount'],
-                    config.name,
-                    form.cleaned_data['purpose'],
-                )
-                if isinstance(response, TransactionResponse):
-                    self._show_messages(response)
-                elif isinstance(response, NeedTANResponse):
-                    return self._tan_request(fints_account.login, client, response)
-                else:
-                    messages.error(self.request, _("Invalid response: {}".format(response)))
+                try:
+                    response = client.simple_sepa_transfer(
+                        sepa_account,
+                        form.cleaned_data['iban'],
+                        form.cleaned_data['bic'],
+                        form.cleaned_data['recipient'],
+                        form.cleaned_data['amount'],
+                        config.name,
+                        form.cleaned_data['purpose'],
+                    )
+                    if isinstance(response, TransactionResponse):
+                        fints_account.log(self, '.transfer.completed',
+                            transfer=transfer_log_data,
+                            response_status=response.status,
+                            response_messages=response.responses,
+                            response_data=response.data)
+                        self._show_messages(response)
+                    elif isinstance(response, NeedTANResponse):
+                        retval, transfer_uuid = self._tan_request(fints_account.login, client, response)
+                        fints_account.log(self, '.transfer.started',
+                            transfer=transfer_log_data,
+                            uuid=transfer_uuid,
+                        )
+                        return retval
+                    else:
+                        fints_account.log(self, '.transfer.internal_error', transfer=transfer_log_data)
+                        messages.error(self.request, _("Invalid response: {}".format(response)))
+                except:
+                    fints_account.log(self, '.transfer.exception', transfer=transfer_log_data)
+                    raise
         return super().form_valid(form)
 
 class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
@@ -457,14 +483,24 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
     def form_valid(self, form):
         tan_request_data = self._tan_request_data()
         fints_login = self.get_object()
+        #fints_account = fints_login. ... # FIXME
 
         with self.fints_client(fints_login, form) as client:
             with client.resume_dialog(tan_request_data['dialog']):
-                response = client.send_tan(tan_request_data['response'], form.cleaned_data['tan'].strip())
-                if isinstance(response, TransactionResponse):
-                    self._show_messages(response)
-                else:
-                    messages.error(self.request, _("Invalid response: {}".format(response)))
+                try:
+                    response = client.send_tan(tan_request_data['response'], form.cleaned_data['tan'].strip())
+                    if isinstance(response, TransactionResponse):
+                        fints_login.log(self, '.transfer.completed',
+                            response_status=response.status,
+                            response_messages=response.responses,
+                            response_data=response.data,
+                            uuid=self.kwargs['uuid'])
+                        self._show_messages(response)
+                    else:
+                        fints_login.log(self, '.transfer.internal_error', uuid=self.kwargs['uuid'])
+                        messages.error(self.request, _("Invalid response: {}".format(response)))
+                except:
+                    fints_login.log(self, '.transfer.exception', transfer=transfer_log_data, uuid=self.kwargs['uuid'])
         self._tan_request_done()
         return super().form_valid(form)
 
@@ -480,11 +516,12 @@ class FinTSLoginRefreshView(SingleObjectMixin, FinTSClientFormMixin, FormView):
     def object(self):
         return self.get_object()  # FIXME: WTF?  Apparently I'm supposed to implement a get()/post() that sets self.object?
 
+    @transaction.atomic
     def form_valid(self, form):
         fints_login = self.get_object()
         with self.fints_client(fints_login, form) as client:
             with client:
-                _fetch_update_accounts(fints_login, client)
+                _fetch_update_accounts(fints_login, client, view=self)
 
         if form.errors:
             return super().form_invalid(form)
@@ -513,10 +550,12 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
             )
         return LinkForm
 
+    @transaction.atomic
     def form_valid(self, form):
         account = self.get_object()
         account.account = Account.objects.get(pk=form.cleaned_data['existing_account'])
         account.save()
+        account.log(self, '.linked', account=account.account)
         return super().form_valid(form)
 
 
@@ -580,6 +619,7 @@ class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
         with self.fints_client(fints_account.login, form) as client:
             with client:
                 transactions = client.get_transactions(sepa_account, form.cleaned_data['fetch_from_date'], date.today())
+                fints_account.log(self, '.transactions_fetched')
 
         if form.errors:
             return super().form_invalid(form)
@@ -647,8 +687,15 @@ class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
                 if booking.data == data:
                     break
             else:
-                tr = Transaction.objects.create(value_datetime=t.data.get('date'))
-                Booking.objects.create(transaction=tr, data=data, **args)
+                tr = Transaction.objects.create(
+                    value_datetime=t.data.get('date'),
+                    user_or_context='FinTS fetch transactions')
+                if 'debit_account' in args:
+                    args['account'] = args.pop('debit_account')
+                    tr.debit(data=data, user_or_context='FinTS fetch transactions', **args)
+                else:
+                    args['account'] = args.pop('credit_account')
+                    tr.credit(data=data, user_or_context='FinTS fetch transactions', **args)
 
 
         fints_account.last_fetch_date = date.today()
