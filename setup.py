@@ -24,7 +24,7 @@ cmdclass = {
 
 setup(
     name='byro-fints',
-    version='0.0.1',
+    version='0.0.3',
     description='Byro plugin to retrieve bank statements via FinTS 3.0 (formerly known as HBCI)',
     long_description=long_description,
     url='https://github.com/henryk/byro-fints',
