@@ -130,7 +130,7 @@ class FinTSClientMixin:
             fints_user_login.login_name,
             pin,
             fints_login.fints_url,
-            set_data=fints_user_login.fints_client_data,
+            from_data=fints_user_login.fints_client_data,
         )
         client.add_response_callback(self.fints_callback)
 
@@ -146,7 +146,7 @@ class FinTSClientMixin:
             pin_correct = False
 
         if pin_correct:
-            fints_user_login.fints_client_data = client.get_data(including_private=True)
+            fints_user_login.fints_client_data = client.deconstruct(including_private=True)
             fints_user_login.save()
 
             if form:
