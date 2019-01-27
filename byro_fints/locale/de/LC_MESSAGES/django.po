@@ -2,11 +2,307 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-03-07 19:01+0100\n"
+"POT-Creation-Date: 2019-01-27 14:49+0100\n"
 "PO-Revision-Date: \n"
-"Last-Translator: Henryk Plötz\n"
+"Last-Translator: Henryk Plötz <henryk@ploetzli.ch>\n"
 "Language-Team: \n"
 "Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 2.2.1\n"
+
+#: byro_fints/__init__.py:10
+msgid "Byro FinTS/HBCI 3.0 plugin"
+msgstr "Byro FinTS/HBCI 3.0 Plugin"
+
+#: byro_fints/__init__.py:12
+msgid ""
+"Byro plugin to retrieve bank statements via FinTS 3.0 (formerly known as "
+"HBCI)"
+msgstr "Byro-Plugin zum Abrufen von Kontoauszügen über FinTS 3.0 (früher HBCI)"
+
+#: byro_fints/models.py:9
+msgid "FinTS Login Data"
+msgstr "FinTS-Logindaten"
+
+#: byro_fints/models.py:14 byro_fints/models.py:90 byro_fints/views.py:102
+msgid "Display name"
+msgstr "Anzeigename"
+
+#: byro_fints/models.py:19 byro_fints/views.py:101
+msgid "Routing number (BLZ)"
+msgstr "Bankleitzahl (BLZ)"
+
+#: byro_fints/models.py:25 byro_fints/templates/byro_fints/dashboard.html:32
+#: byro_fints/views.py:103
+msgid "FinTS URL"
+msgstr "FinTS-URL"
+
+#: byro_fints/models.py:50
+msgid "Login name/Legitimation ID"
+msgstr "Loginname/Legitimierungs-ID"
+
+#: byro_fints/models.py:65
+msgid "FinTS Account"
+msgstr "FinTS-Konto"
+
+#: byro_fints/signals.py:15
+msgid "Communication with bank"
+msgstr "Zahlungsverkehr"
+
+#: byro_fints/templates/byro_fints/account_fetch.html:5
+msgid "Fetch transactions …"
+msgstr "Buchungen abholen …"
+
+#: byro_fints/templates/byro_fints/account_fetch.html:11
+#: byro_fints/templates/byro_fints/snippet_account_list.html:36
+msgid "Fetch transactions"
+msgstr "Buchungen abholen"
+
+#: byro_fints/templates/byro_fints/account_information.html:6
+#: byro_fints/templates/byro_fints/snippet_account_list.html:30
+msgid "Account information"
+msgstr "Konto Informationen"
+
+#: byro_fints/templates/byro_fints/account_information.html:12
+msgid "Operation"
+msgstr "Vorgang"
+
+#: byro_fints/templates/byro_fints/account_information.html:13
+msgid "Supported by bank"
+msgstr "Durch Bank unterstützt"
+
+#: byro_fints/templates/byro_fints/account_information.html:14
+msgid "Allowed on account"
+msgstr "Auf Konto erlaubt"
+
+#: byro_fints/templates/byro_fints/account_information.html:23
+#: byro_fints/templates/byro_fints/account_information.html:30
+msgid "Yes"
+msgstr "Ja"
+
+#: byro_fints/templates/byro_fints/account_link.html:5
+msgid "Link bank account …"
+msgstr "Bankkonto verknüpfen …"
+
+#: byro_fints/templates/byro_fints/account_link.html:11
+#: byro_fints/templates/byro_fints/login_add.html:14
+#: byro_fints/templates/byro_fints/login_edit.html:11
+msgid "Save"
+msgstr "Speichern"
+
+#: byro_fints/templates/byro_fints/account_transfer.html:5
+msgid "SEPA transfer …"
+msgstr "SEPA-Überweisung …"
+
+#: byro_fints/templates/byro_fints/account_transfer.html:11
+msgid "Transfer …"
+msgstr "Überweisung …"
+
+#: byro_fints/templates/byro_fints/base.html:13
+#: byro_fints/templates/byro_fints/dashboard.html:5
+msgid "Dashboard"
+msgstr "Überblick"
+
+#: byro_fints/templates/byro_fints/dashboard.html:21
+msgid ""
+"To use the FinTS functionality, you need to create a bank login and fetch "
+"the account list. Then you can link the FinTS accounts to existing or new "
+"accounts in the bookkeeping module."
+msgstr ""
+"Um die FinTS-Funktionalität nutzen zu können, müssen Sie einen Bank-Login "
+"erstellen und die Kontoliste abrufen. Dann können Sie die FinTS-Konten mit "
+"bestehenden oder neuen Konten im Buchhaltungsmodul verknüpfen."
+
+#: byro_fints/templates/byro_fints/dashboard.html:24
+msgid "Create bank login"
+msgstr "Bank-Login erstellen"
+
+#: byro_fints/templates/byro_fints/dashboard.html:26
+msgid "Known bank logins"
+msgstr "Existierende Bank-Logins"
+
+#: byro_fints/templates/byro_fints/dashboard.html:30
+msgid "BLZ"
+msgstr "BLZ"
+
+#: byro_fints/templates/byro_fints/dashboard.html:31
+msgid "Name"
+msgstr "Name"
+
+#: byro_fints/templates/byro_fints/dashboard.html:33
+#: byro_fints/templates/byro_fints/snippet_account_list.html:8
+msgid "Actions"
+msgstr "Aktionen"
+
+#: byro_fints/templates/byro_fints/dashboard.html:44
+msgid "Edit login data"
+msgstr "Login-Daten bearbeiten"
+
+#: byro_fints/templates/byro_fints/dashboard.html:47
+msgid "Refresh account data"
+msgstr "Kontodaten aktualisieren"
+
+#: byro_fints/templates/byro_fints/dashboard.html:55
+msgid "Known bank accounts"
+msgstr "Existierende Bankkonten"
+
+#: byro_fints/templates/byro_fints/login_add.html:5
+msgid "Create bank login …"
+msgstr "Bank-Login erstellen …"
+
+#: byro_fints/templates/byro_fints/login_add.html:8
+msgid ""
+"Please fill in at least BLZ, login name and PIN. The other fields can "
+"possibly be autofilled."
+msgstr ""
+"Bitte geben Sie mindestens BLZ, Login-Namen und PIN ein. Die anderen Felder "
+"werden, soweit möglich, automatisch ausgefüllt."
+
+#: byro_fints/templates/byro_fints/login_edit.html:5
+msgid "Edit bank login …"
+msgstr "Bank-Login bearbeiten …"
+
+#: byro_fints/templates/byro_fints/login_edit.html:14
+msgid "Associated bank accounts"
+msgstr "Verknüpfte Bankkonten"
+
+#: byro_fints/templates/byro_fints/login_refresh.html:5
+msgid "Refresh bank and account information …"
+msgstr "Bank-und Kontoinformationen auffrischen …"
+
+#: byro_fints/templates/byro_fints/login_refresh.html:8 byro_fints/views.py:84
+msgid "PIN request"
+msgstr "PIN-Abfrage"
+
+#: byro_fints/templates/byro_fints/login_refresh.html:12
+msgid "Fetch information"
+msgstr "Informationen abholen"
+
+#: byro_fints/templates/byro_fints/snippet_account_list.html:6
+msgid "Linked to account"
+msgstr "Verknüpftes Konto"
+
+#: byro_fints/templates/byro_fints/snippet_account_list.html:18
+msgid "Link to existing account …"
+msgstr "Mit existierendem Konto verknüpfen …"
+
+#: byro_fints/templates/byro_fints/snippet_account_list.html:32
+#: byro_fints/views.py:106
+msgid "SEPA transfer"
+msgstr "SEPA-Überweisung"
+
+#: byro_fints/templates/byro_fints/tan_request.html:7
+msgid "Enter TAN …"
+msgstr "TAN eingeben …"
+
+#: byro_fints/templates/byro_fints/tan_request.html:25
+msgid ""
+"You need to provide a transaction number (TAN) for the transaction to "
+"proceed. Please follow the instructions given by your bank and enter the "
+"resulting TAN below."
+msgstr ""
+"Sie müssen eine Transaktionsnummer (TAN) angeben, damit die Transaktion "
+"durchgeführt werden kann. Bitte folgen Sie den Anweisungen Ihrer Bank und "
+"geben Sie die daraus resultierende TAN unten ein."
+
+#: byro_fints/templates/byro_fints/tan_request.html:69
+msgid "Execute"
+msgstr "Ausführen"
+
+#: byro_fints/views.py:85
+msgid "Login name"
+msgstr "Login Name"
+
+#: byro_fints/views.py:86
+msgid "PIN"
+msgstr "PIN"
+
+#: byro_fints/views.py:88
+msgid "Store PIN?"
+msgstr "PIN speichern?"
+
+#: byro_fints/views.py:90
+msgid "Don't store PIN"
+msgstr "PIN nicht speichern"
+
+#: byro_fints/views.py:91
+msgid "For this login session only"
+msgstr "Nur für diese Login-Sitzung"
+
+#: byro_fints/views.py:92
+msgid "Store PIN (encrypted with account password)"
+msgstr "PIN speichern (verschlüsselt mit Login-Passwort)"
+
+#: byro_fints/views.py:98
+msgid "Create FinTS login"
+msgstr "FinTS-Login erstellen"
+
+#: byro_fints/views.py:109
+msgid "Recipient"
+msgstr "Empfänger"
+
+#: byro_fints/views.py:110
+msgid "IBAN"
+msgstr "IBAN"
+
+#: byro_fints/views.py:111
+msgid "BIC"
+msgstr "BIC"
+
+#: byro_fints/views.py:112
+msgid "Amount"
+msgstr "Betrag"
+
+#: byro_fints/views.py:113
+msgid "Purpose"
+msgstr "Zweck"
+
+#: byro_fints/views.py:145
+msgid "Can't establish FinTS dialog: Username/PIN wrong?"
+msgstr "Kann FinTS-Dialog nicht aufbauen: Username/PIN falsch?"
+
+#: byro_fints/views.py:189
+#, python-brace-format
+msgid "PIN for '{display_name}'"
+msgstr "PIN für '{display_name}'"
+
+#: byro_fints/views.py:231
+msgid ""
+"FinTS URL could not be looked up automatically, please fill it in manually."
+msgstr ""
+"FinTS-URL konnte nicht automatisch nachgeschlagen werden, bitte füllen Sie "
+"sie manuell aus."
+
+#: byro_fints/views.py:252
+msgid "Bank login was added, please double-check TAN method"
+msgstr "Bank-Login wurde hinzugefügt, bitte überprüfen Sie TAN-Methode"
+
+#: byro_fints/views.py:269
+msgid "TAN method"
+msgstr "TAN-Methode"
+
+#: byro_fints/views.py:286
+msgid "Unknown response. Final transaction status unknown."
+msgstr "Unbekannte Antwort. Endgültiger Transaktionsstatus unbekannt."
+
+#: byro_fints/views.py:288
+msgid "Error: Transaction not executed."
+msgstr "Fehler: Transaktion nicht ausgeführt."
+
+#: byro_fints/views.py:290
+msgid "Warning: Transaction warning, see other messages."
+msgstr "Warnung: Transaktionswarnung, siehe andere Nachrichten."
+
+#: byro_fints/views.py:292
+msgid "Transaction executed successfully."
+msgstr "Transaktion erfolgreich durchgeführt."
+
+#: byro_fints/views.py:384 byro_fints/views.py:501
+msgid "Invalid response: {}"
+msgstr "Ungültige Antwort: {}"
+
+#: byro_fints/views.py:587
+msgid "Fetch start date"
+msgstr "Abholen beginnend am"
