@@ -31,7 +31,7 @@ setup(
     author='Henryk Plötz',
     author_email='henryk@ploetzli.ch',
     license='Apache Software License',
-    install_requires=['fints==2.0.*', 'django-securebox'],
+    install_requires=['fints==2.1.*', 'django-securebox'],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,
