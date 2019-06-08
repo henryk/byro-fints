@@ -51,8 +51,8 @@ def _fetch_update_accounts(fints_login, client, information=None, view=None):
 
                 caps = 0
                 for cap_provided, caps_searched in CAPABILITY_MAP.items():
-                    if any( 
-                        information['bank']['supported_operations'][cap_searched] 
+                    if any(
+                        information['bank']['supported_operations'][cap_searched]
                         and acc['supported_operations'][cap_searched]
                         for cap_searched in caps_searched
                     ):
@@ -646,7 +646,7 @@ class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
                     }
                 elif isinstance(v, mt940_models.Date):
                     v = v.isoformat()
-                
+
                 mt940_data[k] = v
 
             amount = t.data.get('amount').amount
