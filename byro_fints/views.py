@@ -1,43 +1,45 @@
-import re
-import bleach
 from uuid import uuid4
-from datetime import date
-from contextlib import contextmanager
 from base64 import b64encode, b64decode
-from django_securebox.utils import Storage
-
-from django import forms
-from django.db import transaction
-from django.urls import reverse, reverse_lazy
-from django.utils.translation import ugettext_lazy as _
-from django.views.generic import CreateView, UpdateView, FormView, ListView, TemplateView
-from django.views.generic.detail import SingleObjectMixin
-from django.contrib import messages
-from django.http import HttpResponseRedirect
-from django.utils.safestring import mark_safe
-from localflavor.generic.forms import BICFormField, IBANFormField
-from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, TransactionResponse, ResponseStatus
-from fints.exceptions import *
-from fints.models import SEPAAccount
-from fints.hhd.flicker import parse as hhd_flicker_parse
-import fints.formals
-from mt940 import models as mt940_models
+from contextlib import contextmanager
+from datetime import date
+from uuid import uuid4
 
 from byro.bookkeeping.models import Account, Transaction, Booking
 from byro.common.models import Configuration
+from django import forms
+from django.contrib import messages
+from django.db import transaction
+from django.http import HttpResponseRedirect
+from django.urls import reverse, reverse_lazy
+from django.utils.safestring import mark_safe
+from django.utils.translation import ugettext_lazy as _
+from django.views.generic import UpdateView, FormView, ListView, TemplateView
+from django.views.generic.detail import SingleObjectMixin
+from django_securebox.utils import Storage
+from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, TransactionResponse, ResponseStatus
+from fints.exceptions import *
+from fints.hhd.flicker import parse as hhd_flicker_parse
+from fints.models import SEPAAccount
+from localflavor.generic.forms import BICFormField, IBANFormField
+from mt940 import models as mt940_models
 
 from .data import get_bank_information_by_blz
-from .models import FinTSAccount, FinTSLogin, FinTSUserLogin, FinTSAccountCapabilities
+from .models import FinTSAccount, FinTSLogin, FinTSAccountCapabilities
 
 PIN_CACHED_SENTINEL = '******'
+
+
 def _cache_label(fints_login):
     return 'byro_fints__pin__{}__cache'.format(fints_login.pk)
 
+
 CAPABILITY_MAP = {
-    FinTSAccountCapabilities.FETCH_TRANSACTIONS: (FinTSOperations.GET_TRANSACTIONS, ),
-    FinTSAccountCapabilities.SEND_TRANSFER: (FinTSOperations.SEPA_TRANSFER_SINGLE, FinTSOperations.SEPA_TRANSFER_MULTIPLE),
-    FinTSAccountCapabilities.SEND_TRANSFER_MULTIPLE: (FinTSOperations.SEPA_TRANSFER_MULTIPLE, ),
+    FinTSAccountCapabilities.FETCH_TRANSACTIONS: (FinTSOperations.GET_TRANSACTIONS,),
+    FinTSAccountCapabilities.SEND_TRANSFER: (
+    FinTSOperations.SEPA_TRANSFER_SINGLE, FinTSOperations.SEPA_TRANSFER_MULTIPLE),
+    FinTSAccountCapabilities.SEND_TRANSFER_MULTIPLE: (FinTSOperations.SEPA_TRANSFER_MULTIPLE,),
 }
+
 
 def _fetch_update_accounts(fints_login, client, information=None, view=None):
     accounts = client.get_sepa_accounts()
@@ -52,9 +54,9 @@ def _fetch_update_accounts(fints_login, client, information=None, view=None):
                 caps = 0
                 for cap_provided, caps_searched in CAPABILITY_MAP.items():
                     if any(
-                        information['bank']['supported_operations'][cap_searched]
-                        and acc['supported_operations'][cap_searched]
-                        for cap_searched in caps_searched
+                            information['bank']['supported_operations'][cap_searched]
+                            and acc['supported_operations'][cap_searched]
+                            for cap_searched in caps_searched
                     ):
                         caps = caps | cap_provided.value
                 extra_params['caps'] = caps
@@ -73,11 +75,13 @@ def _fetch_update_accounts(fints_login, client, information=None, view=None):
         else:
             account.log(view, '.refreshed')
 
+
 def _encode_binary_for_session(data):
-  return b64encode(data).decode('us-ascii')
+    return b64encode(data).decode('us-ascii')
+
 
 def _decode_binary_for_session(data):
-  return b64decode(data.encode('us-ascii'))
+    return b64decode(data.encode('us-ascii'))
 
 
 class PinRequestForm(forms.Form):
@@ -94,6 +98,7 @@ class PinRequestForm(forms.Form):
         initial='0'
     )
 
+
 class LoginCreateForm(PinRequestForm):
     form_name = _("Create FinTS login")
     field_order = ['blz', 'login_name', 'pin']
@@ -101,6 +106,7 @@ class LoginCreateForm(PinRequestForm):
     blz = forms.CharField(label=_('Routing number (BLZ)'), required=True)
     name = forms.CharField(label=_('Display name'), required=False)
     fints_url = forms.CharField(label=_('FinTS URL'), required=False)
+
 
 class SEPATransferForm(PinRequestForm):
     form_name = _("SEPA transfer")
@@ -111,6 +117,7 @@ class SEPATransferForm(PinRequestForm):
     bic = BICFormField(label=_("BIC"), required=True)
     amount = forms.DecimalField(label=_('Amount'), required=True)
     purpose = forms.CharField(label=_('Purpose'), required=True)
+
 
 class FinTSClientMixin:
     @contextmanager
@@ -171,11 +178,14 @@ class FinTSClientMixin:
         elif response.code.startswith('0'):
             messages.warning(self.request, "{} \u2014 {}".format(response.code, response.text))
 
+
 class FinTSClientFormMixin(FinTSClientMixin):
     def _pin_store_location(self, fints_login):
-        if self.request.securebox.fetch_value(_cache_label(fints_login), Storage.TRANSIENT_ONLY, default=None) is not None:
+        if self.request.securebox.fetch_value(_cache_label(fints_login), Storage.TRANSIENT_ONLY,
+                                              default=None) is not None:
             return '1'
-        elif self.request.securebox.fetch_value(_cache_label(fints_login), Storage.PERMANENT_ONLY, default=None) is not None:
+        elif self.request.securebox.fetch_value(_cache_label(fints_login), Storage.PERMANENT_ONLY,
+                                                default=None) is not None:
             return '2'
         return '0'
 
@@ -200,6 +210,7 @@ class FinTSClientFormMixin(FinTSClientMixin):
                 for name in maybe_hidden_fields:
                     form.fields[name].widget = forms.HiddenInput()
         return form
+
 
 class Dashboard(ListView):
     template_name = 'byro_fints/dashboard.html'
@@ -228,7 +239,8 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
 
         try:
             if not fints_login.fints_url:
-                form.add_error('fints_url', _("FinTS URL could not be looked up automatically, please fill it in manually."))
+                form.add_error('fints_url',
+                               _("FinTS URL could not be looked up automatically, please fill it in manually."))
                 return super().form_invalid(form)
 
             fints_login.log(self, '.created')
@@ -250,7 +262,9 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
                 fints_login.delete()
 
         messages.warning(self.request, _("Bank login was added, please double-check TAN method"))
-        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.edit', kwargs={'pk': fints_login.pk}))
+        return HttpResponseRedirect(
+            reverse('plugins:byro_fints:finance.fints.login.edit', kwargs={'pk': fints_login.pk}))
+
 
 class FinTSLoginEditView(FinTSClientMixin, UpdateView):
     template_name = 'byro_fints/login_edit.html'
@@ -264,7 +278,7 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
         with self.fints_client(self.get_object()) as client:
             information = client.get_information()
 
-        tan_choices = [ (k, v.name) for (k,v) in information['auth']['tan_mechanisms'].items() ]
+        tan_choices = [(k, v.name) for (k, v) in information['auth']['tan_mechanisms'].items()]
         form.fields['tan_method'] = forms.ChoiceField(
             label=_('TAN method'),
             choices=tan_choices,
@@ -279,6 +293,7 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
             with self.fints_client(self.get_object()) as client:
                 client.set_tan_mechanism(form.cleaned_data['tan_method'])
         return super().form_valid(form)
+
 
 class TransactionResponseMixin:
     def _show_messages(self, response):
@@ -302,7 +317,8 @@ class TransactionResponseMixin:
 
         self.request.securebox.store_value("tan_request_{}".format(uuid), data, Storage.TRANSIENT_ONLY)
 
-        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request', kwargs={'pk': fints_login.pk, 'uuid': uuid})), uuid
+        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request',
+                                            kwargs={'pk': fints_login.pk, 'uuid': uuid})), uuid
 
     def _tan_request_data(self):
         # FIXME Raise 404
@@ -310,6 +326,7 @@ class TransactionResponseMixin:
             class Dummy(NeedTANResponse):
                 def __init__(self, *args, **kwargs):
                     pass
+
             data = {
                 'tan_mechanism': None,
                 'dialog': None,
@@ -319,7 +336,8 @@ class TransactionResponseMixin:
             if self.kwargs['uuid'] == 'test_data':
                 data['response'].challenge_hhduc = '02908881344731012345678900515,00'
             else:
-                data['response'].challenge_matrix = ('image/png', b64decode("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"))
+                data['response'].challenge_matrix = ('image/png', b64decode(
+                    "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"))
             return data
 
         data = self.request.securebox.fetch_value('tan_request_{}'.format(self.kwargs['uuid']))
@@ -328,6 +346,7 @@ class TransactionResponseMixin:
 
     def _tan_request_done(self):
         self.request.securebox.delete_value('tan_request_{}'.format(self.kwargs['uuid']))
+
 
 class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/account_transfer.html'
@@ -350,7 +369,7 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
         )
         transfer_log_data = {
             k: v
-            for k,v in form.cleaned_data.items() if not k in ('pin', 'store_pin')
+            for k, v in form.cleaned_data.items() if not k in ('pin', 'store_pin')
         }
         transfer_log_data['source_account'] = sepa_account._asdict()
         with self.fints_client(fints_account.login, form) as client:
@@ -367,17 +386,17 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
                     )
                     if isinstance(response, TransactionResponse):
                         fints_account.log(self, '.transfer.completed',
-                            transfer=transfer_log_data,
-                            response_status=response.status,
-                            response_messages=response.responses,
-                            response_data=response.data)
+                                          transfer=transfer_log_data,
+                                          response_status=response.status,
+                                          response_messages=response.responses,
+                                          response_data=response.data)
                         self._show_messages(response)
                     elif isinstance(response, NeedTANResponse):
                         retval, transfer_uuid = self._tan_request(fints_account.login, client, response)
                         fints_account.log(self, '.transfer.started',
-                            transfer=transfer_log_data,
-                            uuid=transfer_uuid,
-                        )
+                                          transfer=transfer_log_data,
+                                          uuid=transfer_uuid,
+                                          )
                         return retval
                     else:
                         fints_account.log(self, '.transfer.internal_error', transfer=transfer_log_data)
@@ -386,6 +405,7 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
                     fints_account.log(self, '.transfer.exception', transfer=transfer_log_data)
                     raise
         return super().form_valid(form)
+
 
 class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/tan_request.html'
@@ -402,14 +422,15 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
         tan_request_data = self._tan_request_data()
 
         with self.fints_client(fints_login) as client:
-            tan_param = client.get_tan_mechanisms()[tan_request_data['tan_mechanism'] or client.get_current_tan_mechanism()]
+            tan_param = client.get_tan_mechanisms()[
+                tan_request_data['tan_mechanism'] or client.get_current_tan_mechanism()]
             # Do not use tan_param.allowed_format, because IntegerField is not the same as AllowedFormat.NUMERIC
             # FIXME
             tan_field = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
 
         form = super().get_form(extra_fields={
-                'tan': tan_field,
-            }, *args, **kwargs)
+            'tan': tan_field,
+        }, *args, **kwargs)
 
         return form
 
@@ -417,14 +438,14 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
         stream = [1, 0, 31, 30, 31, 30]
         for i in range(len(data)):
             d = int(data[i ^ 1], 16)
-            stream.append( 1 | (d << 1) )
-            stream.append( 0 | (d << 1) )
+            stream.append(1 | (d << 1))
+            stream.append(0 | (d << 1))
 
         last = 0
         per_frame = 100.0 / float(len(stream))
         duration = 0.025 * len(stream)
 
-        keyframes = [[] for i in range(5) ]
+        keyframes = [[] for i in range(5)]
 
         for index, frame in enumerate(stream):
             changed = frame ^ last
@@ -437,11 +458,11 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
                 else:
                     color = '#000'
                 if (changed >> bit_index) & 1:
-                    keyframes[bit_index].append( r"{}% {{ background-color: {}; }}".format(index*per_frame, color) )
+                    keyframes[bit_index].append(r"{}% {{ background-color: {}; }}".format(index * per_frame, color))
 
         result = [
             "@keyframes {css_class}-bar-{i} {{ {k} }}".format(k=" ".join(kf), i=i, css_class=css_class)
-            for i,kf in enumerate(keyframes)
+            for i, kf in enumerate(keyframes)
         ]
         result.extend(
             """
@@ -457,12 +478,11 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
 
         return "\n".join(result)
 
-
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         tan_request_data = self._tan_request_data()
 
-        context['challenge'] = mark_safe( tan_request_data['response'].challenge_html )
+        context['challenge'] = mark_safe(tan_request_data['response'].challenge_html)
 
         if tan_request_data['response'].challenge_hhduc:
             flicker = hhd_flicker_parse(tan_request_data['response'].challenge_hhduc)
@@ -483,7 +503,7 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
     def form_valid(self, form):
         tan_request_data = self._tan_request_data()
         fints_login = self.get_object()
-        #fints_account = fints_login. ... # FIXME
+        # fints_account = fints_login. ... # FIXME
 
         with self.fints_client(fints_login, form) as client:
             with client.resume_dialog(tan_request_data['dialog']):
@@ -491,10 +511,10 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
                     response = client.send_tan(tan_request_data['response'], form.cleaned_data['tan'].strip())
                     if isinstance(response, TransactionResponse):
                         fints_login.log(self, '.transfer.completed',
-                            response_status=response.status,
-                            response_messages=response.responses,
-                            response_data=response.data,
-                            uuid=self.kwargs['uuid'])
+                                        response_status=response.status,
+                                        response_messages=response.responses,
+                                        response_data=response.data,
+                                        uuid=self.kwargs['uuid'])
                         self._show_messages(response)
                     else:
                         fints_login.log(self, '.transfer.internal_error', uuid=self.kwargs['uuid'])
@@ -548,6 +568,7 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
                 choices=[(a.pk, a.name) for a in Account.objects.all() if not hasattr(a, 'fints_account')],
                 initial=self.object.account.pk if self.object.account else None,
             )
+
         return LinkForm
 
     @transaction.atomic
@@ -574,7 +595,9 @@ class FinTSAccountInformationView(SingleObjectMixin, FinTSClientFormMixin, Templ
         with self.fints_client(fints_account.login) as client:
             context['information'] = client.get_information()
         for account in context['information']['accounts']:
-            if (account['iban'] == fints_account.iban) or (account['account_number'] == fints_account.accountnumber and account['subaccount_number'] == fints_account.subaccount):
+            if (account['iban'] == fints_account.iban) or (
+                    account['account_number'] == fints_account.accountnumber and account[
+                'subaccount_number'] == fints_account.subaccount):
                 context['account_information'] = account
                 break
             else:
@@ -681,8 +704,8 @@ class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
                 args['credit_account'] = fints_account.account
 
             for booking in Booking.objects.filter(
-                transaction__value_datetime=t.data.get('date'),
-                **args,
+                    transaction__value_datetime=t.data.get('date'),
+                    **args,
             ).all():
                 if booking.data == data:
                     break
@@ -696,7 +719,6 @@ class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
                 else:
                     args['account'] = args.pop('credit_account')
                     tr.credit(data=data, user_or_context='FinTS fetch transactions', **args)
-
 
         fints_account.last_fetch_date = date.today()
         fints_account.save()
