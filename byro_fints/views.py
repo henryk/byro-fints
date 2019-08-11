@@ -22,6 +22,7 @@ from fints.hhd.flicker import parse as hhd_flicker_parse
 from fints.models import SEPAAccount
 from localflavor.generic.forms import BICFormField, IBANFormField
 from mt940 import models as mt940_models
+from fints_url import find as find_fints_url
 
 from .data import get_bank_information_by_blz
 from .models import FinTSAccount, FinTSLogin, FinTSAccountCapabilities
@@ -231,9 +232,17 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
     def form_valid(self, form):
         bank_information = get_bank_information_by_blz(form.cleaned_data['blz'])
 
+        fints_url = form.cleaned_data['fints_url']
+        if not fints_url:
+            try:
+                fints_url = find_fints_url(bank_code=form.cleaned_data['blz'])
+                messages.warning("Found URL with fints_url")
+            except Exception:
+                fints_url = bank_information.get('PIN/TAN URL', '')
+
         fints_login = FinTSLogin.objects.create(
             blz=form.cleaned_data['blz'],
-            fints_url=form.cleaned_data['fints_url'] or bank_information.get('PIN/TAN URL', ''),
+            fints_url=fints_url,
             name=form.cleaned_data['name'] or bank_information.get('Institut', ''),
         )
 
