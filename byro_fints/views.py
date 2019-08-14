@@ -15,6 +15,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import UpdateView, FormView, ListView, TemplateView
 from django.views.generic.detail import SingleObjectMixin
+from django.views.generic.edit import FormMixin
 from django_securebox.utils import Storage
 from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, TransactionResponse, ResponseStatus
 from fints.exceptions import *
@@ -180,7 +181,7 @@ class FinTSClientMixin:
             messages.warning(self.request, "{} \u2014 {}".format(response.code, response.text))
 
 
-class FinTSClientFormMixin(FinTSClientMixin):
+class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
     def _pin_store_location(self, fints_login):
         if self.request.securebox.fetch_value(_cache_label(fints_login), Storage.TRANSIENT_ONLY,
                                               default=None) is not None:
@@ -193,6 +194,10 @@ class FinTSClientFormMixin(FinTSClientMixin):
     def get_form(self, extra_fields={}, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
         fints_login = self.get_object()
+        self.augment_form(form, fints_login, extra_fields)
+        return form
+
+    def augment_form(self, form, fints_login, extra_fields={}):
         if isinstance(fints_login, FinTSAccount):
             fints_login = fints_login.login
         fints_user_login, _ignore = fints_login.user_login.get_or_create(user=self.request.user)
