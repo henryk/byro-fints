@@ -139,6 +139,7 @@ class FinTSClientMixin:
             fints_user_login.login_name,
             pin,
             fints_login.fints_url,
+            product_id="F41CDA6B1F8E0DADA0DDA29FD",
             from_data=fints_user_login.fints_client_data,
         )
         client.add_response_callback(self.fints_callback)
