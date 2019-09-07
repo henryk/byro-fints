@@ -24,14 +24,14 @@ cmdclass = {
 
 setup(
     name='byro-fints',
-    version='0.0.4',
+    version='0.0.5',
     description='Byro plugin to retrieve bank statements via FinTS 3.0 (formerly known as HBCI)',
     long_description=long_description,
     url='https://github.com/henryk/byro-fints',
     author='Henryk Plötz',
     author_email='henryk@ploetzli.ch',
     license='Apache Software License',
-    install_requires=['fints==2.1.*', 'schwifty', 'fints-url', 'django-securebox'],
+    install_requires=['fints==2.2.*', 'schwifty', 'fints-url', 'django-securebox'],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,
