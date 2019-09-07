@@ -1,3 +1,4 @@
+from django.contrib.postgres.fields import JSONField
 from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
@@ -31,6 +32,7 @@ class FinTSLogin(models.Model, LogTargetMixin):
     def is_usable(self):
         return bool(self.blz and self.fints_url)
 
+
 class FinTSUserLogin(models.Model):
     login = models.ForeignKey(
         to='byro_fints.FinTSLogin',
@@ -53,6 +55,8 @@ class FinTSUserLogin(models.Model):
     )
 
     fints_client_data = models.BinaryField(verbose_name='Stored FinTS client data', null=True, blank=True)
+    available_tan_media = JSONField(default=list)
+    selected_tan_medium = models.CharField(default=None, null=True, blank=True, max_length=32)
 
 
 class FinTSAccountCapabilities(IntEnum):

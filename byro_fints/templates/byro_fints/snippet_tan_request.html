@@ -1,0 +1,51 @@
+{% load i18n %}
+{% load compress %}
+{% load static %}
+
+{% block scripts %}
+<script type="text/javascript" src="{% static "byro_fints/js/flickertan.js" %}"></script>
+{% endblock %}
+{% block stylesheets %}
+{% compress css %}
+<link rel="stylesheet" type="text/x-scss" href="{% static "byro_fints/scss/flickertan.scss" %}"/>
+{% endcompress %}
+<style>
+ {{ challenge_flicker_css }}
+</style>
+{% endblock %}
+
+        <div class="card-body bg-light">
+            <p class="card-text">{{ challenge }}</p>
+        </div>
+        {% if challenge_flicker %}
+        <div class="card-body">
+            <p class="card-text">
+                <div class="flicker-code flicker-animate-css {{ challenge_flicker_css_class }}" data-flicker-content="{{ challenge_flicker }}">
+                    <div class="flicker-controls">
+                        <div class="flicker-controls-left">
+                            <span class="fa fa-play flicker-control-playpause"></span>  <span class="fa fa-minus-square flicker-control-speedminus"></span> <span class="fa fa-plus-square flicker-control-speedplus"></span>
+                        </div>
+                        <div class="flicker-controls-center">
+                            <span class="fa fa-search-plus flicker-control-zoomplus"></span><span class="fa fa-search-minus flicker-control-zoomminus"></span>
+                        </div>
+                    </div>
+                    <div class="flicker-main">
+                        <div class="flicker-chevron-l"></div>
+                        <div class="flicker-chevron-r"></div>
+                        <div class="flicker-bar flicker-bar-0"></div>
+                        <div class="flicker-bar flicker-bar-1"></div>
+                        <div class="flicker-bar flicker-bar-2"></div>
+                        <div class="flicker-bar flicker-bar-3"></div>
+                        <div class="flicker-bar flicker-bar-4"></div>
+                    </div>
+                </div>
+            </p>
+        </div>
+        {% endif %}
+        {% if challenge_matrix_url %}
+        <div class="card-body">
+            <p class="card-text text-center">
+                <img src="{{challenge_matrix_url}}">
+            </p>
+        </div>
+        {% endif %}

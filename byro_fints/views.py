@@ -21,12 +21,13 @@ from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, T
 from fints.exceptions import *
 from fints.hhd.flicker import parse as hhd_flicker_parse
 from fints.models import SEPAAccount
+from fints.formals import DescriptionRequired, TANMedia5
 from localflavor.generic.forms import BICFormField, IBANFormField
 from mt940 import models as mt940_models
 from fints_url import find as find_fints_url
 
 from .data import get_bank_information_by_blz
-from .models import FinTSAccount, FinTSLogin, FinTSAccountCapabilities
+from .models import FinTSAccount, FinTSLogin, FinTSAccountCapabilities, FinTSUserLogin
 
 PIN_CACHED_SENTINEL = '******'
 
@@ -43,9 +44,16 @@ CAPABILITY_MAP = {
 }
 
 
-def _fetch_update_accounts(fints_login, client, information=None, view=None):
+def _fetch_update_accounts(fints_user_login, client, information=None, view=None):
+    fints_login = fints_user_login.login
     accounts = client.get_sepa_accounts()
     information = information or client.get_information()
+
+    if any(getattr(e, 'description_required', None) in (DescriptionRequired.MUST, DescriptionRequired.MAY)
+        for e in information['auth']['tan_mechanisms'].values()):
+        tan_media_result = client.get_tan_media()
+    else:
+        tan_media_result = None
 
     for account in accounts:
         extra_params = {}
@@ -76,6 +84,13 @@ def _fetch_update_accounts(fints_login, client, information=None, view=None):
             account.log(view, '.created')
         else:
             account.log(view, '.refreshed')
+
+    if tan_media_result:
+        _usage_option, tan_media = tan_media_result
+        tan_media_names = [e.tan_medium_name for e in tan_media]
+
+        fints_user_login.available_tan_media = [{'name': e} for e in tan_media_names]
+        fints_user_login.save(update_fields=['available_tan_media'])
 
 
 def _encode_binary_for_session(data):
@@ -144,6 +159,13 @@ class FinTSClientMixin:
         )
         client.add_response_callback(self.fints_callback)
 
+        # FIXME HACK HACK HACK The python-fints API with regards to TAN media is not very useful yet
+        # Circumvent it here
+
+        if fints_user_login.selected_tan_medium:
+            fake_tan_medium = TANMedia5(tan_medium_name = fints_user_login.selected_tan_medium)
+            client.set_tan_medium(fake_tan_medium)
+
         try:
             yield client
             pin_correct = True
@@ -156,8 +178,9 @@ class FinTSClientMixin:
             pin_correct = False
 
         if pin_correct:
+            client.set_tan_medium(None)  # FIXME HACK HACK HACK
             fints_user_login.fints_client_data = client.deconstruct(including_private=True)
-            fints_user_login.save()
+            fints_user_login.save(update_fields=['fints_client_data'])
 
             if form:
                 if form.cleaned_data['store_pin'] == '1':
@@ -180,6 +203,63 @@ class FinTSClientMixin:
             messages.error(self.request, "{} \u2014 {}".format(response.code, response.text))
         elif response.code.startswith('0'):
             messages.warning(self.request, "{} \u2014 {}".format(response.code, response.text))
+
+    def _show_transaction_messages(self, response):
+        if response.status == ResponseStatus.UNKNOWN:
+            messages.warning(self.request, _("Unknown response. Final transaction status unknown."))
+        elif response.status == ResponseStatus.ERROR:
+            messages.error(self.request, _("Error: Transaction not executed."))
+        elif response.status == ResponseStatus.WARNING:
+            messages.warning(self.request, _("Warning: Transaction warning, see other messages."))
+        elif response.status == ResponseStatus.SUCCESS:
+            messages.success(self.request, _("Transaction executed successfully."))
+
+    def pause_for_tan_request(self, client, response, **kwargs):
+        uuid = str(uuid4())
+        data = {
+            'tan_mechanism': client.get_current_tan_mechanism(),
+            'dialog': client.pause_dialog(),
+            'response': response.get_data(),
+        }
+        data.update(kwargs)
+
+        self.request.securebox.store_value("tan_request_{}".format(uuid), data, Storage.TRANSIENT_ONLY)
+
+        return uuid
+
+    def resume_from_tan_request(self, client, uuid):
+        data = self._tan_request_data(uuid)
+        dialog_data = data.pop('dialog')
+        response = data.pop('response')
+
+        return client.resume_dialog(dialog_data), response, data
+
+    def clean_tan_request(self, uuid):
+        self.request.securebox.delete_value('tan_request_{}'.format(uuid))
+
+    def _tan_request_data(self, uuid):
+        # FIXME Raise 404
+        if uuid in ('test_data', 'test_data_2'):
+            class Dummy(NeedTANResponse):
+                def __init__(self, *args, **kwargs):
+                    pass
+
+            data = {
+                'tan_mechanism': None,
+                'dialog': None,
+                'response': Dummy(),
+            }
+            data['response'].challenge_html = "Yada"
+            if uuid == 'test_data':
+                data['response'].challenge_hhduc = '02908881344731012345678900515,00'
+            else:
+                data['response'].challenge_matrix = ('image/png', b64decode(
+                    "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"))
+            return data
+
+        data = self.request.securebox.fetch_value('tan_request_{}'.format(uuid))
+        data['response'] = NeedTANResponse.from_data(data['response'])
+        return data
 
 
 class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
@@ -217,6 +297,84 @@ class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
                 for name in maybe_hidden_fields:
                     form.fields[name].widget = forms.HiddenInput()
         return form
+
+    def get_tan_form_fields(self, fints_login, tan_request_data, *args, **kwargs):
+        with self.fints_client(fints_login) as client:
+            tan_param = client.get_tan_mechanisms()[
+                tan_request_data['tan_mechanism'] or client.get_current_tan_mechanism()]
+            # Do not use tan_param.allowed_format, because IntegerField is not the same as AllowedFormat.NUMERIC
+            # FIXME
+            tan_field = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
+
+        return {
+            'tan': tan_field
+        }
+
+    @staticmethod
+    def get_flicker_css(data, css_class):
+        stream = [1, 0, 31, 30, 31, 30]
+        for i in range(len(data)):
+            d = int(data[i ^ 1], 16)
+            stream.append(1 | (d << 1))
+            stream.append(0 | (d << 1))
+
+        last = 0
+        per_frame = 100.0 / float(len(stream))
+        duration = 0.025 * len(stream)
+
+        keyframes = [[] for i in range(5)]
+
+        for index, frame in enumerate(stream):
+            changed = frame ^ last
+            last = frame
+            if index == 0:
+                changed = 31
+            for bit_index in range(5):
+                if (frame >> bit_index) & 1:
+                    color = '#fff'
+                else:
+                    color = '#000'
+                if (changed >> bit_index) & 1:
+                    keyframes[bit_index].append(r"{}% {{ background-color: {}; }}".format(index * per_frame, color))
+
+        result = [
+            "@keyframes {css_class}-bar-{i} {{ {k} }}".format(k=" ".join(kf), i=i, css_class=css_class)
+            for i, kf in enumerate(keyframes)
+        ]
+        result.extend(
+            """
+            .flicker-animate-css .flicker-bar {{
+                animation-duration: {duration}s;
+                animation-iteration-count: infinite;
+                animation-timing-function: step-end;
+            }}
+            .flicker-animate-css.{css_class} .flicker-bar-{i} {{
+                animation-name: {css_class}-bar-{i};
+            }}""".format(i=i, css_class=css_class, duration=duration) for i in range(5)
+        )
+
+        return "\n".join(result)
+
+    def get_tan_context_data(self, tan_request_data):
+        context = {
+            'challenge': mark_safe(tan_request_data['response'].challenge_html)
+        }
+
+        if tan_request_data['response'].challenge_hhduc:
+            flicker = hhd_flicker_parse(tan_request_data['response'].challenge_hhduc)
+            context['challenge_flicker'] = flicker.render()
+
+            css_class = 'flicker-{}'.format(uuid4())
+            context['challenge_flicker_css_class'] = css_class
+            context['challenge_flicker_css'] = lambda: self.get_flicker_css(flicker.render(), css_class)
+
+        if tan_request_data['response'].challenge_matrix:
+            context['challenge_matrix_url'] = 'data:{};base64,{}'.format(
+                tan_request_data['response'].challenge_matrix[0],
+                b64encode(tan_request_data['response'].challenge_matrix[1]).decode('us-ascii')
+            )
+
+        return context
 
 
 class Dashboard(ListView):
@@ -261,13 +419,14 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
             fints_login.log(self, '.created')
 
             with self.fints_client(fints_login, form) as client:
+                fints_user_login = fints_login.user_login.filter(user=self.request.user).first()
                 with client:
                     information = client.get_information()
 
                     if not form.cleaned_data['name'] and information['bank']['name']:
                         fints_login.name = information['bank']['name']
 
-                    _fetch_update_accounts(fints_login, client, information, view=self)
+                    _fetch_update_accounts(fints_user_login, client, information, view=self)
 
             if form.errors:
                 return super().form_invalid(form)
@@ -290,8 +449,22 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
-        with self.fints_client(self.get_object()) as client:
+
+        fints_login = self.get_object()
+        fints_user_login = fints_login.user_login.filter(user=self.request.user).first()
+        tan_media_choices = []
+
+        with self.fints_client(fints_login) as client:
             information = client.get_information()
+
+        if any(
+                getattr(e, 'description_required', None) in (DescriptionRequired.MUST, DescriptionRequired.MAY)
+                for e in information['auth']['tan_mechanisms'].values()):
+            if fints_user_login:
+                if fints_user_login.available_tan_media:
+                    tan_media_choices = [(v['name'], v['name']) for v in fints_user_login.available_tan_media]
+                else:
+                    messages.warning(self.request, _("TAN media may be required to execute commands. Please synchronize the account."))
 
         tan_choices = [(k, v.name) for (k, v) in information['auth']['tan_mechanisms'].items()]
         form.fields['tan_method'] = forms.ChoiceField(
@@ -301,69 +474,28 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
             initial=information['auth']['current_tan_mechanism'],
         )
 
+        if tan_media_choices:
+            form.fields['tan_medium'] = forms.ChoiceField(
+                label=_('TAN medium'),
+                choices=tan_media_choices,
+                initial=fints_user_login.selected_tan_medium,
+            )
+
         return form
 
     def form_valid(self, form):
+        fints_login = self.get_object()
         if 'tan_method' in form.changed_data:
-            with self.fints_client(self.get_object()) as client:
+            with self.fints_client(fints_login) as client:
                 client.set_tan_mechanism(form.cleaned_data['tan_method'])
+        if 'tan_medium' in form.changed_data:
+            fints_user_login = fints_login.user_login.filter(user=self.request.user).first()
+            fints_user_login.selected_tan_medium = form.cleaned_data['tan_medium']
+            fints_user_login.save(update_fields=['selected_tan_medium'])
         return super().form_valid(form)
 
 
-class TransactionResponseMixin:
-    def _show_messages(self, response):
-        if response.status == ResponseStatus.UNKNOWN:
-            messages.warning(self.request, _("Unknown response. Final transaction status unknown."))
-        elif response.status == ResponseStatus.ERROR:
-            messages.error(self.request, _("Error: Transaction not executed."))
-        elif response.status == ResponseStatus.WARNING:
-            messages.warning(self.request, _("Warning: Transaction warning, see other messages."))
-        elif response.status == ResponseStatus.SUCCESS:
-            messages.success(self.request, _("Transaction executed successfully."))
-
-    def _tan_request(self, fints_login, client, response, **kwargs):
-        uuid = uuid4()
-        data = {
-            'tan_mechanism': client.get_current_tan_mechanism(),
-            'dialog': client.pause_dialog(),
-            'response': response.get_data(),
-        }
-        data.update(kwargs)
-
-        self.request.securebox.store_value("tan_request_{}".format(uuid), data, Storage.TRANSIENT_ONLY)
-
-        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request',
-                                            kwargs={'pk': fints_login.pk, 'uuid': uuid})), uuid
-
-    def _tan_request_data(self):
-        # FIXME Raise 404
-        if self.kwargs['uuid'] in ('test_data', 'test_data_2'):
-            class Dummy(NeedTANResponse):
-                def __init__(self, *args, **kwargs):
-                    pass
-
-            data = {
-                'tan_mechanism': None,
-                'dialog': None,
-                'response': Dummy(),
-            }
-            data['response'].challenge_html = "Yada"
-            if self.kwargs['uuid'] == 'test_data':
-                data['response'].challenge_hhduc = '02908881344731012345678900515,00'
-            else:
-                data['response'].challenge_matrix = ('image/png', b64decode(
-                    "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"))
-            return data
-
-        data = self.request.securebox.fetch_value('tan_request_{}'.format(self.kwargs['uuid']))
-        data['response'] = NeedTANResponse.from_data(data['response'])
-        return data
-
-    def _tan_request_done(self):
-        self.request.securebox.delete_value('tan_request_{}'.format(self.kwargs['uuid']))
-
-
-class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
+class FinTSAccountTransferView(SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/account_transfer.html'
     form_class = SEPATransferForm
     model = FinTSAccount
@@ -405,14 +537,17 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
                                           response_status=response.status,
                                           response_messages=response.responses,
                                           response_data=response.data)
-                        self._show_messages(response)
+                        self._show_transaction_messages(response)
                     elif isinstance(response, NeedTANResponse):
-                        retval, transfer_uuid = self._tan_request(fints_account.login, client, response)
+                        transfer_uuid = self.pause_for_tan_request(client, response)
                         fints_account.log(self, '.transfer.started',
                                           transfer=transfer_log_data,
                                           uuid=transfer_uuid,
                                           )
-                        return retval
+
+                        return HttpResponseRedirect(reverse('plugins:byro_fints:finance.fints.login.tan_request',
+                                                            kwargs={'pk': fints_account.login.pk, 'uuid': transfer_uuid}))
+
                     else:
                         fints_account.log(self, '.transfer.internal_error', transfer=transfer_log_data)
                         messages.error(self.request, _("Invalid response: {}".format(response)))
@@ -422,7 +557,7 @@ class FinTSAccountTransferView(TransactionResponseMixin, SingleObjectMixin, FinT
         return super().form_valid(form)
 
 
-class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinTSClientFormMixin, FormView):
+class FinTSLoginTANRequestView(SingleObjectMixin, FinTSClientFormMixin, FormView):
     template_name = 'byro_fints/tan_request.html'
     form_class = PinRequestForm
     model = FinTSLogin
@@ -433,110 +568,40 @@ class FinTSLoginTANRequestView(TransactionResponseMixin, SingleObjectMixin, FinT
         return self.get_object()
 
     def get_form(self, *args, **kwargs):
-        fints_login = self.get_object()
-        tan_request_data = self._tan_request_data()
-
-        with self.fints_client(fints_login) as client:
-            tan_param = client.get_tan_mechanisms()[
-                tan_request_data['tan_mechanism'] or client.get_current_tan_mechanism()]
-            # Do not use tan_param.allowed_format, because IntegerField is not the same as AllowedFormat.NUMERIC
-            # FIXME
-            tan_field = forms.CharField(label=tan_param.text_return_value, max_length=tan_param.max_length_input)
-
-        form = super().get_form(extra_fields={
-            'tan': tan_field,
-        }, *args, **kwargs)
-
-        return form
-
-    def get_flicker_css(self, data, css_class):
-        stream = [1, 0, 31, 30, 31, 30]
-        for i in range(len(data)):
-            d = int(data[i ^ 1], 16)
-            stream.append(1 | (d << 1))
-            stream.append(0 | (d << 1))
-
-        last = 0
-        per_frame = 100.0 / float(len(stream))
-        duration = 0.025 * len(stream)
-
-        keyframes = [[] for i in range(5)]
-
-        for index, frame in enumerate(stream):
-            changed = frame ^ last
-            last = frame
-            if index == 0:
-                changed = 31
-            for bit_index in range(5):
-                if (frame >> bit_index) & 1:
-                    color = '#fff'
-                else:
-                    color = '#000'
-                if (changed >> bit_index) & 1:
-                    keyframes[bit_index].append(r"{}% {{ background-color: {}; }}".format(index * per_frame, color))
-
-        result = [
-            "@keyframes {css_class}-bar-{i} {{ {k} }}".format(k=" ".join(kf), i=i, css_class=css_class)
-            for i, kf in enumerate(keyframes)
-        ]
-        result.extend(
-            """
-            .flicker-animate-css .flicker-bar {{
-                animation-duration: {duration}s;
-                animation-iteration-count: infinite;
-                animation-timing-function: step-end;
-            }}
-            .flicker-animate-css.{css_class} .flicker-bar-{i} {{
-                animation-name: {css_class}-bar-{i};
-            }}""".format(i=i, css_class=css_class, duration=duration) for i in range(5)
+        return super().get_form(extra_fields=
+            self.get_tan_form_fields(
+                self.object,
+                self._tan_request_data(self.kwargs['uuid'])
+            ), *args, **kwargs
         )
 
-        return "\n".join(result)
-
-    def get_context_data(self, *args, **kwargs):
-        context = super().get_context_data(*args, **kwargs)
-        tan_request_data = self._tan_request_data()
-
-        context['challenge'] = mark_safe(tan_request_data['response'].challenge_html)
-
-        if tan_request_data['response'].challenge_hhduc:
-            flicker = hhd_flicker_parse(tan_request_data['response'].challenge_hhduc)
-            context['challenge_flicker'] = flicker.render()
-
-            css_class = 'flicker-{}'.format(uuid4())
-            context['challenge_flicker_css_class'] = css_class
-            context['challenge_flicker_css'] = lambda: self.get_flicker_css(flicker.render(), css_class)
-
-        if tan_request_data['response'].challenge_matrix:
-            context['challenge_matrix_url'] = 'data:{};base64,{}'.format(
-                tan_request_data['response'].challenge_matrix[0],
-                b64encode(tan_request_data['response'].challenge_matrix[1]).decode('us-ascii')
-            )
-
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_tan_context_data(self._tan_request_data(self.kwargs['uuid'])))
         return context
 
     def form_valid(self, form):
-        tan_request_data = self._tan_request_data()
         fints_login = self.get_object()
         # fints_account = fints_login. ... # FIXME
 
         with self.fints_client(fints_login, form) as client:
-            with client.resume_dialog(tan_request_data['dialog']):
+            resume_dialog, response, other_data = self.resume_from_tan_request(client, self.kwargs['uuid'])
+            with resume_dialog:
                 try:
-                    response = client.send_tan(tan_request_data['response'], form.cleaned_data['tan'].strip())
+                    response = client.send_tan(response, form.cleaned_data['tan'].strip())
                     if isinstance(response, TransactionResponse):
                         fints_login.log(self, '.transfer.completed',
                                         response_status=response.status,
                                         response_messages=response.responses,
                                         response_data=response.data,
                                         uuid=self.kwargs['uuid'])
-                        self._show_messages(response)
+                        self._show_transaction_messages(response)
                     else:
                         fints_login.log(self, '.transfer.internal_error', uuid=self.kwargs['uuid'])
                         messages.error(self.request, _("Invalid response: {}".format(response)))
                 except:
-                    fints_login.log(self, '.transfer.exception', transfer=transfer_log_data, uuid=self.kwargs['uuid'])
-        self._tan_request_done()
+                    fints_login.log(self, '.transfer.exception', uuid=self.kwargs['uuid'])
+        self.clean_tan_request(self.kwargs['uuid'])
         return super().form_valid(form)
 
 
@@ -555,8 +620,9 @@ class FinTSLoginRefreshView(SingleObjectMixin, FinTSClientFormMixin, FormView):
     def form_valid(self, form):
         fints_login = self.get_object()
         with self.fints_client(fints_login, form) as client:
+            fints_user_login = fints_login.user_login.filter(user=self.request.user).first()
             with client:
-                _fetch_update_accounts(fints_login, client, view=self)
+                _fetch_update_accounts(fints_user_login, client, view=self)
 
         if form.errors:
             return super().form_invalid(form)
@@ -599,6 +665,7 @@ class FinTSAccountInformationView(SingleObjectMixin, FinTSClientFormMixin, Templ
     template_name = 'byro_fints/account_information.html'
     model = FinTSAccount
     context_object_name = 'fints_account'
+    form_class = PinRequestForm
 
     @property
     def object(self):
