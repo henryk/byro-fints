@@ -108,12 +108,11 @@ class FinTSInterface(FinTSClientFormMixin):
 
         form = self._get_tan_request_form(fints_login, tan_request_data)
         with self.fints_client(fints_login, form) as client:
-            with client:
-                resume_dialog, response, other_data = self.resume_from_tan_request(client, transfer_uuid)
+            resume_dialog, response, other_data = self.resume_from_tan_request(client, transfer_uuid)
 
-                with resume_dialog:
-                    response = client.send_tan(response, form.cleaned_data['tan'].strip())
-                    return response
+            with resume_dialog:
+                response = client.send_tan(response, form.cleaned_data['tan'].strip())
+                return response
 
     def tan_request_fini(self, transfer_uuid):
         self.clean_tan_request(transfer_uuid)
