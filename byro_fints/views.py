@@ -1,3 +1,4 @@
+from functools import partial
 from uuid import uuid4
 from base64 import b64encode, b64decode
 from contextlib import contextmanager
@@ -197,12 +198,17 @@ class FinTSClientMixin:
                     self.request.securebox.delete_value(_cache_label(fints_login))
 
     def fints_callback(self, segment, response):
+        l_ = None
         if response.code.startswith('0'):
-            messages.info(self.request, "{} \u2014 {}".format(response.code, response.text))
+            l_ = partial(messages.info, self.request)
         elif response.code.startswith('9'):
-            messages.error(self.request, "{} \u2014 {}".format(response.code, response.text))
+            l_ = partial(messages.info, self.request)
         elif response.code.startswith('0'):
-            messages.warning(self.request, "{} \u2014 {}".format(response.code, response.text))
+            l_ = partial(messages.info, self.request)
+        if l_:
+            l_("{} \u2014 {}".format(response.code, response.text)
+               + ("({})".format(response.parameters) if response.parameters else "")
+            )
 
     def _show_transaction_messages(self, response):
         if response.status == ResponseStatus.UNKNOWN:
