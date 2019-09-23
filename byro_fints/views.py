@@ -18,7 +18,7 @@ from django.views.generic import UpdateView, FormView, ListView, TemplateView
 from django.views.generic.detail import SingleObjectMixin
 from django.views.generic.edit import FormMixin
 from django_securebox.utils import Storage
-from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, TransactionResponse, ResponseStatus
+from fints.client import FinTS3PinTanClient, FinTSOperations, NeedTANResponse, TransactionResponse, ResponseStatus, FinTSClientMode
 from fints.exceptions import *
 from fints.hhd.flicker import parse as hhd_flicker_parse
 from fints.models import SEPAAccount
@@ -157,6 +157,7 @@ class FinTSClientMixin:
             fints_login.fints_url,
             product_id="F41CDA6B1F8E0DADA0DDA29FD",
             from_data=fints_user_login.fints_client_data,
+            mode=FinTSClientMode.INTERACTIVE,
         )
         client.add_response_callback(self.fints_callback)
 
