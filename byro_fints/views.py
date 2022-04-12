@@ -179,7 +179,6 @@ class FinTSClientMixin:
             pin_correct = False
 
         if pin_correct:
-            client.set_tan_medium(None)  # FIXME HACK HACK HACK
             fints_user_login.fints_client_data = client.deconstruct(including_private=True)
             fints_user_login.save(update_fields=['login_name', 'fints_client_data'])
 
