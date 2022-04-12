@@ -409,7 +409,7 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
                 fints_url = find_fints_url(bank_code=form.cleaned_data['blz'])
                 messages.warning("Found URL with fints_url")
             except Exception:
-                fints_url = bank_information.get('PIN/TAN URL', '')
+                fints_url = bank_information.get('PIN/TAN-Zugang URL', '')
 
         fints_login = FinTSLogin.objects.create(
             blz=form.cleaned_data['blz'],
