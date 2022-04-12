@@ -7,18 +7,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('byro_fints', '0006_fintsaccount_caps'),
+        ("byro_fints", "0006_fintsaccount_caps"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='fintsuserlogin',
-            name='available_tan_media',
+            model_name="fintsuserlogin",
+            name="available_tan_media",
             field=django.contrib.postgres.fields.jsonb.JSONField(default=list),
         ),
         migrations.AddField(
-            model_name='fintsuserlogin',
-            name='selected_tan_medium',
+            model_name="fintsuserlogin",
+            name="selected_tan_medium",
             field=models.CharField(blank=True, default=None, max_length=32, null=True),
         ),
     ]

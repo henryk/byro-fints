@@ -30,14 +30,16 @@ class FinTSInterface(FinTSClientFormMixin):
             return self._fintsinterface_form_cache[cache_key]
 
         kwargs = {
-            'prefix': "fints_form_{}".format(form_type),
+            "prefix": "fints_form_{}".format(form_type),
         }
 
-        if self.request.method in ('POST', 'PUT'):
-            kwargs.update({
-                'data': self.request.POST,
-                'files': self.request.FILES,
-            })
+        if self.request.method in ("POST", "PUT"):
+            kwargs.update(
+                {
+                    "data": self.request.POST,
+                    "files": self.request.FILES,
+                }
+            )
 
         form = PinRequestForm(**kwargs)
         self.augment_form(form, fints_login, extra_fields)
@@ -47,20 +49,22 @@ class FinTSInterface(FinTSClientFormMixin):
         return form
 
     def _get_sepa_debit_form(self, fints_login):
-        return self._common_get_form('sepa_debit', fints_login)
+        return self._common_get_form("sepa_debit", fints_login)
 
     def _get_tan_request_form(self, fints_login, tan_request_data):
         extra_fields = self.get_tan_form_fields(
             fints_login,
             tan_request_data,
         )
-        return self._common_get_form('tan_request', fints_login, extra_fields=extra_fields)
+        return self._common_get_form(
+            "tan_request", fints_login, extra_fields=extra_fields
+        )
 
     def sepa_debit_init(self, login_pk):
         fints_login = FinTSLogin.objects.filter(pk=login_pk).first()
         form = self._get_sepa_debit_form(fints_login)
         return {
-            'form': form,
+            "form": form,
         }
 
     def sepa_debit_do(self, login_pk, account_iban, **kwargs):
@@ -76,10 +80,7 @@ class FinTSInterface(FinTSClientFormMixin):
                 else:
                     return "ACCOUNT NOT AVAILABLE"
 
-                response = client.sepa_debit(
-                    account=account,
-                    **kwargs
-                )
+                response = client.sepa_debit(account=account, **kwargs)
 
                 # FIXME This API
 
@@ -97,9 +98,9 @@ class FinTSInterface(FinTSClientFormMixin):
         context = self.get_tan_context_data(tan_request_data)
 
         return {
-            'form': form,
-            'context': context,
-            'template': 'byro_fints/snippet_tan_request.html',
+            "form": form,
+            "context": context,
+            "template": "byro_fints/snippet_tan_request.html",
         }
 
     def tan_request_send_tan(self, login_pk, transfer_uuid):
@@ -108,10 +109,12 @@ class FinTSInterface(FinTSClientFormMixin):
 
         form = self._get_tan_request_form(fints_login, tan_request_data)
         with self.fints_client(fints_login, form) as client:
-            resume_dialog, response, other_data = self.resume_from_tan_request(client, transfer_uuid)
+            resume_dialog, response, other_data = self.resume_from_tan_request(
+                client, transfer_uuid
+            )
 
             with resume_dialog:
-                response = client.send_tan(response, form.cleaned_data['tan'].strip())
+                response = client.send_tan(response, form.cleaned_data["tan"].strip())
                 return response
 
     def tan_request_fini(self, transfer_uuid):

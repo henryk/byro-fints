@@ -6,25 +6,28 @@ from byro.common.models import LogTargetMixin
 
 
 class FinTSLogin(models.Model, LogTargetMixin):
-    form_title = _('FinTS Login Data')
-    LOG_TARGET_BASE = 'byro_fints.login'
+    form_title = _("FinTS Login Data")
+    LOG_TARGET_BASE = "byro_fints.login"
 
     name = models.CharField(
         max_length=100,
-        verbose_name=_('Display name'),
-        null=False, blank=True,
+        verbose_name=_("Display name"),
+        null=False,
+        blank=True,
     )
 
     blz = models.CharField(
-        verbose_name=_('Routing number (BLZ)'),
+        verbose_name=_("Routing number (BLZ)"),
         max_length=8,
-        null=False, blank=False,
+        null=False,
+        blank=False,
     )
 
     fints_url = models.CharField(
-        verbose_name=_('FinTS URL'),
+        verbose_name=_("FinTS URL"),
         max_length=256,
-        null=False, blank=True,
+        null=False,
+        blank=True,
     )
 
     @property
@@ -34,28 +37,33 @@ class FinTSLogin(models.Model, LogTargetMixin):
 
 class FinTSUserLogin(models.Model):
     login = models.ForeignKey(
-        to='byro_fints.FinTSLogin',
+        to="byro_fints.FinTSLogin",
         on_delete=models.CASCADE,
-        related_name='user_login',
+        related_name="user_login",
         blank=True,
     )
 
     user = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='+',
+        related_name="+",
         blank=True,
     )
 
     login_name = models.CharField(
-        verbose_name=_('Login name/Legitimation ID'),
+        verbose_name=_("Login name/Legitimation ID"),
         max_length=100,
-        null=False, blank=False,
+        null=False,
+        blank=False,
     )
 
-    fints_client_data = models.BinaryField(verbose_name='Stored FinTS client data', null=True, blank=True)
+    fints_client_data = models.BinaryField(
+        verbose_name="Stored FinTS client data", null=True, blank=True
+    )
     available_tan_media = models.JSONField(default=list)
-    selected_tan_medium = models.CharField(default=None, null=True, blank=True, max_length=32)
+    selected_tan_medium = models.CharField(
+        default=None, null=True, blank=True, max_length=32
+    )
 
 
 class FinTSAccountCapabilities(IntEnum):
@@ -65,21 +73,21 @@ class FinTSAccountCapabilities(IntEnum):
 
 
 class FinTSAccount(models.Model, LogTargetMixin):
-    form_title = _('FinTS Account')
-    LOG_TARGET_BASE = 'byro_fints.account'
+    form_title = _("FinTS Account")
+    LOG_TARGET_BASE = "byro_fints.account"
 
     login = models.ForeignKey(
-        to='byro_fints.FinTSLogin',
+        to="byro_fints.FinTSLogin",
         on_delete=models.CASCADE,
-        related_name='accounts',
+        related_name="accounts",
         blank=True,
     )
 
     account = models.OneToOneField(
-        to='bookkeeping.Account',
+        to="bookkeeping.Account",
         on_delete=models.SET_NULL,
-        related_name='fints_account',
-        null=True
+        related_name="fints_account",
+        null=True,
     )
 
     iban = models.CharField(max_length=35, null=False, blank=False)
@@ -90,8 +98,9 @@ class FinTSAccount(models.Model, LogTargetMixin):
 
     name = models.CharField(
         max_length=100,
-        verbose_name=_('Display name'),
-        null=False, blank=True,
+        verbose_name=_("Display name"),
+        null=False,
+        blank=True,
     )
 
     last_fetch_date = models.DateField(null=True)

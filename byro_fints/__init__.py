@@ -3,19 +3,21 @@ from django.utils.translation import ugettext_lazy
 
 
 class PluginApp(AppConfig):
-    name = 'byro_fints'
-    verbose_name = 'Byro FinTS/HBCI 3.0 plugin'
+    name = "byro_fints"
+    verbose_name = "Byro FinTS/HBCI 3.0 plugin"
 
     class ByroPluginMeta:
-        name = ugettext_lazy('Byro FinTS/HBCI 3.0 plugin')
-        author = 'Henryk Plötz'
-        description = ugettext_lazy('Byro plugin to retrieve bank statements via FinTS 3.0 (formerly known as HBCI)')
+        name = ugettext_lazy("Byro FinTS/HBCI 3.0 plugin")
+        author = "Henryk Plötz"
+        description = ugettext_lazy(
+            "Byro plugin to retrieve bank statements via FinTS 3.0 (formerly known as HBCI)"
+        )
         visible = True
-        version = '0.0.4'
+        version = "0.0.4"
 
     def ready(self):
         from . import signals  # NOQA
         from . import urls  # NOQA
 
 
-default_app_config = 'byro_fints.PluginApp'
+default_app_config = "byro_fints.PluginApp"

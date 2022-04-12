@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('byro_fints', '0007_auto_20190814_1614'),
+        ("byro_fints", "0007_auto_20190814_1614"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='fintsuserlogin',
-            name='available_tan_media',
+            model_name="fintsuserlogin",
+            name="available_tan_media",
             field=models.JSONField(default=list),
         ),
     ]

@@ -8,13 +8,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('byro_fints', '0001_initial'),
+        ("byro_fints", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='fintsaccount',
-            name='last_fetch_date',
+            model_name="fintsaccount",
+            name="last_fetch_date",
             field=models.DateField(null=True),
         ),
     ]
