@@ -25,7 +25,6 @@ from fints.models import SEPAAccount
 from fints.formals import DescriptionRequired, TANMedia5
 from localflavor.generic.forms import BICFormField, IBANFormField
 from mt940 import models as mt940_models
-from fints_url import find as find_fints_url
 
 from .data import get_bank_information_by_blz
 from .models import FinTSAccount, FinTSLogin, FinTSAccountCapabilities, FinTSUserLogin
@@ -405,11 +404,7 @@ class FinTSLoginCreateView(FinTSClientMixin, FormView):
 
         fints_url = form.cleaned_data['fints_url']
         if not fints_url:
-            try:
-                fints_url = find_fints_url(bank_code=form.cleaned_data['blz'])
-                messages.warning("Found URL with fints_url")
-            except Exception:
-                fints_url = bank_information.get('PIN/TAN-Zugang URL', '')
+            fints_url = bank_information.get('PIN/TAN-Zugang URL', '')
 
         fints_login = FinTSLogin.objects.create(
             blz=form.cleaned_data['blz'],
