@@ -1,0 +1,23 @@
+{% extends "byro_fints/base.html" %}
+{% load bootstrap4 %}
+{% load i18n %}
+
+{% block stylesheets %}
+    {{ super }}
+    <style>
+        .cards-progress .card::after {
+            content: '>';
+            display: block;
+            position: absolute;
+            font-size: 200%;
+            right: -1.5ex;
+            top: 30%;
+        }
+
+        .cards-progress .card:last-child::after {
+            content: none;
+        }
+    </style>
+{% endblock %}
+
+{% block fints_heading %}{% trans "Create bank login …" %}{% endblock %}

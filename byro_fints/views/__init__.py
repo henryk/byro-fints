@@ -1,5 +1,4 @@
 from functools import partial
-from uuid import uuid4
 from base64 import b64encode, b64decode
 from contextlib import contextmanager
 from datetime import date
@@ -33,110 +32,11 @@ from fints.formals import DescriptionRequired, TANMedia5
 from localflavor.generic.forms import BICFormField, IBANFormField
 from mt940 import models as mt940_models
 
-from .data import get_bank_information_by_blz
-from .models import FinTSAccount, FinTSLogin, FinTSAccountCapabilities, FinTSUserLogin
+from .common import _fetch_update_accounts
 
-PIN_CACHED_SENTINEL = "******"
-
-
-def _cache_label(fints_login):
-    return "byro_fints__pin__{}__cache".format(fints_login.pk)
-
-
-CAPABILITY_MAP = {
-    FinTSAccountCapabilities.FETCH_TRANSACTIONS: (FinTSOperations.GET_TRANSACTIONS,),
-    FinTSAccountCapabilities.SEND_TRANSFER: (
-        FinTSOperations.SEPA_TRANSFER_SINGLE,
-        FinTSOperations.SEPA_TRANSFER_MULTIPLE,
-    ),
-    FinTSAccountCapabilities.SEND_TRANSFER_MULTIPLE: (
-        FinTSOperations.SEPA_TRANSFER_MULTIPLE,
-    ),
-}
-
-
-def _fetch_update_accounts(fints_user_login, client, information=None, view=None):
-    fints_login = fints_user_login.login
-    accounts = client.get_sepa_accounts()
-    information = information or client.get_information()
-
-    if any(
-        getattr(e, "description_required", None)
-        in (DescriptionRequired.MUST, DescriptionRequired.MAY)
-        for e in information["auth"]["tan_mechanisms"].values()
-    ):
-        tan_media_result = client.get_tan_media()
-    else:
-        tan_media_result = None
-
-    for account in accounts:
-        extra_params = {}
-        for acc in information["accounts"]:
-            if acc["iban"] == account.iban:
-                extra_params["name"] = acc["product_name"]
-
-                caps = 0
-                for cap_provided, caps_searched in CAPABILITY_MAP.items():
-                    if any(
-                        information["bank"]["supported_operations"][cap_searched]
-                        and acc["supported_operations"][cap_searched]
-                        for cap_searched in caps_searched
-                    ):
-                        caps = caps | cap_provided.value
-                extra_params["caps"] = caps
-
-        account, created = FinTSAccount.objects.get_or_create(
-            login=fints_login, defaults=extra_params, **account._asdict()
-        )
-        if account.caps != caps:
-            account.caps = caps
-            account.save()
-        # FIXME: Create accounts in bookeeping?
-        if created:
-            account.log(view, ".created")
-        else:
-            account.log(view, ".refreshed")
-
-    if tan_media_result:
-        _usage_option, tan_media = tan_media_result
-        tan_media_names = [e.tan_medium_name for e in tan_media]
-
-        fints_user_login.available_tan_media = [{"name": e} for e in tan_media_names]
-        fints_user_login.save(update_fields=["available_tan_media"])
-
-
-def _encode_binary_for_session(data):
-    return b64encode(data).decode("us-ascii")
-
-
-def _decode_binary_for_session(data):
-    return b64decode(data.encode("us-ascii"))
-
-
-class PinRequestForm(forms.Form):
-    form_name = _("PIN request")
-    login_name = forms.CharField(label=_("Login name"), required=True)
-    pin = forms.CharField(
-        label=_("PIN"), widget=forms.PasswordInput(render_value=True), required=True
-    )
-    store_pin = forms.ChoiceField(
-        label=_("Store PIN?"),
-        choices=[
-            ["0", _("Don't store PIN")],
-            ["1", _("For this login session only")],
-            ["2", _("Store PIN (encrypted with account password)")],
-        ],
-        initial="0",
-    )
-
-
-class LoginCreateForm(PinRequestForm):
-    form_name = _("Create FinTS login")
-    field_order = ["blz", "login_name", "pin"]
-
-    blz = forms.CharField(label=_("Routing number (BLZ)"), required=True)
-    name = forms.CharField(label=_("Display name"), required=False)
-    fints_url = forms.CharField(label=_("FinTS URL"), required=False)
+from ..fints_interface import PIN_CACHED_SENTINEL, _cache_label
+from ..forms import PinRequestForm
+from ..models import FinTSAccount, FinTSLogin
 
 
 class SEPATransferForm(PinRequestForm):
@@ -362,60 +262,6 @@ class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
 
         return {"tan": tan_field}
 
-    @staticmethod
-    def get_flicker_css(data, css_class):
-        stream = [1, 0, 31, 30, 31, 30]
-        for i in range(len(data)):
-            d = int(data[i ^ 1], 16)
-            stream.append(1 | (d << 1))
-            stream.append(0 | (d << 1))
-
-        last = 0
-        per_frame = 100.0 / float(len(stream))
-        duration = 0.025 * len(stream)
-
-        keyframes = [[] for i in range(5)]
-
-        for index, frame in enumerate(stream):
-            changed = frame ^ last
-            last = frame
-            if index == 0:
-                changed = 31
-            for bit_index in range(5):
-                if (frame >> bit_index) & 1:
-                    color = "#fff"
-                else:
-                    color = "#000"
-                if (changed >> bit_index) & 1:
-                    keyframes[bit_index].append(
-                        r"{}% {{ background-color: {}; }}".format(
-                            index * per_frame, color
-                        )
-                    )
-
-        result = [
-            "@keyframes {css_class}-bar-{i} {{ {k} }}".format(
-                k=" ".join(kf), i=i, css_class=css_class
-            )
-            for i, kf in enumerate(keyframes)
-        ]
-        result.extend(
-            """
-            .flicker-animate-css .flicker-bar {{
-                animation-duration: {duration}s;
-                animation-iteration-count: infinite;
-                animation-timing-function: step-end;
-            }}
-            .flicker-animate-css.{css_class} .flicker-bar-{i} {{
-                animation-name: {css_class}-bar-{i};
-            }}""".format(
-                i=i, css_class=css_class, duration=duration
-            )
-            for i in range(5)
-        )
-
-        return "\n".join(result)
-
     def get_tan_context_data(self, tan_request_data):
         context = {"challenge": mark_safe(tan_request_data["response"].challenge_html)}
 
@@ -425,7 +271,7 @@ class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
 
             css_class = "flicker-{}".format(uuid4())
             context["challenge_flicker_css_class"] = css_class
-            context["challenge_flicker_css"] = lambda: self.get_flicker_css(
+            context["challenge_flicker_css"] = lambda: get_flicker_css(
                 flicker.render(), css_class
             )
 
@@ -440,6 +286,58 @@ class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
         return context
 
 
+def get_flicker_css(data, css_class):
+    stream = [1, 0, 31, 30, 31, 30]
+    for i in range(len(data)):
+        d = int(data[i ^ 1], 16)
+        stream.append(1 | (d << 1))
+        stream.append(0 | (d << 1))
+
+    last = 0
+    per_frame = 100.0 / float(len(stream))
+    duration = 0.025 * len(stream)
+
+    keyframes = [[] for i in range(5)]
+
+    for index, frame in enumerate(stream):
+        changed = frame ^ last
+        last = frame
+        if index == 0:
+            changed = 31
+        for bit_index in range(5):
+            if (frame >> bit_index) & 1:
+                color = "#fff"
+            else:
+                color = "#000"
+            if (changed >> bit_index) & 1:
+                keyframes[bit_index].append(
+                    r"{}% {{ background-color: {}; }}".format(index * per_frame, color)
+                )
+
+    result = [
+        "@keyframes {css_class}-bar-{i} {{ {k} }}".format(
+            k=" ".join(kf), i=i, css_class=css_class
+        )
+        for i, kf in enumerate(keyframes)
+    ]
+    result.extend(
+        """
+        .flicker-animate-css .flicker-bar {{
+            animation-duration: {duration}s;
+            animation-iteration-count: infinite;
+            animation-timing-function: step-end;
+        }}
+        .flicker-animate-css.{css_class} .flicker-bar-{i} {{
+            animation-name: {css_class}-bar-{i};
+        }}""".format(
+            i=i, css_class=css_class, duration=duration
+        )
+        for i in range(5)
+    )
+
+    return "\n".join(result)
+
+
 class Dashboard(ListView):
     template_name = "byro_fints/dashboard.html"
     queryset = FinTSLogin.objects.order_by("blz").all()
@@ -449,68 +347,6 @@ class Dashboard(ListView):
         context = super().get_context_data(*args, **kwargs)
         context["fints_accounts"] = FinTSAccount.objects.order_by("iban").all()
         return context
-
-
-class FinTSLoginCreateView(FinTSClientMixin, FormView):
-    template_name = "byro_fints/login_add.html"
-    form_class = LoginCreateForm
-
-    @transaction.atomic
-    def form_valid(self, form):
-        bank_information = get_bank_information_by_blz(form.cleaned_data["blz"])
-
-        fints_url = form.cleaned_data["fints_url"]
-        if not fints_url:
-            fints_url = bank_information.get("PIN/TAN-Zugang URL", "")
-
-        fints_login = FinTSLogin.objects.create(
-            blz=form.cleaned_data["blz"],
-            fints_url=fints_url,
-            name=form.cleaned_data["name"] or bank_information.get("Institut", ""),
-        )
-
-        try:
-            if not fints_login.fints_url:
-                form.add_error(
-                    "fints_url",
-                    _(
-                        "FinTS URL could not be looked up automatically, please fill it in manually."
-                    ),
-                )
-                return super().form_invalid(form)
-
-            fints_login.log(self, ".created")
-
-            with self.fints_client(fints_login, form) as client:
-                fints_user_login = fints_login.user_login.filter(
-                    user=self.request.user
-                ).first()
-                with client:
-                    information = client.get_information()
-
-                    if not form.cleaned_data["name"] and information["bank"]["name"]:
-                        fints_login.name = information["bank"]["name"]
-
-                    _fetch_update_accounts(
-                        fints_user_login, client, information, view=self
-                    )
-
-            if form.errors:
-                return super().form_invalid(form)
-
-        finally:
-            if form.errors:
-                fints_login.delete()
-
-        messages.warning(
-            self.request, _("Bank login was added, please double-check TAN method")
-        )
-        return HttpResponseRedirect(
-            reverse(
-                "plugins:byro_fints:finance.fints.login.edit",
-                kwargs={"pk": fints_login.pk},
-            )
-        )
 
 
 class FinTSLoginEditView(FinTSClientMixin, UpdateView):

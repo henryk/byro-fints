@@ -1,0 +1,17 @@
+{% extends "byro_fints/login_add_base.html" %}
+{% load bootstrap4 %}
+{% load i18n %}
+
+{% block fints_content %}
+    {% include 'byro_fints/login_add_stepper.html' with step=4 %}
+	<p>{% blocktrans trimmed %}
+		You need to confirm the initial login with a TAN.
+	{% endblocktrans %}</p>
+    {% include "byro_fints/snippet_tan_request.html" %}
+    <form method="post">
+        {% csrf_token %}
+        {% bootstrap_form form layout='horizontal' %}
+        <button class="btn btn-success" type="submit">{% trans "Next step" %}</button>
+    </form>
+
+{% endblock %}

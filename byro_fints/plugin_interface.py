@@ -1,5 +1,8 @@
-from .models import FinTSUserLogin, FinTSLogin
-from .views import FinTSClientFormMixin, PinRequestForm
+from typing import Optional
+
+from .models import FinTSLogin
+from .views import FinTSClientFormMixin
+from .forms import PinRequestForm
 
 from fints.client import NeedTANResponse
 
@@ -24,7 +27,7 @@ class FinTSInterface(FinTSClientFormMixin):
 
         return result
 
-    def _common_get_form(self, form_type, fints_login, extra_fields={}):
+    def _common_get_form(self, form_type, fints_login, extra_fields: Optional[dict] = None):
         cache_key = (form_type, fints_login)
         if cache_key in self._fintsinterface_form_cache:
             return self._fintsinterface_form_cache[cache_key]
@@ -42,7 +45,7 @@ class FinTSInterface(FinTSClientFormMixin):
             )
 
         form = PinRequestForm(**kwargs)
-        self.augment_form(form, fints_login, extra_fields)
+        self.augment_form(form, fints_login, extra_fields or {})
 
         self._fintsinterface_form_cache[cache_key] = form
 

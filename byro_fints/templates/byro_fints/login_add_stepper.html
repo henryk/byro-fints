@@ -1,0 +1,50 @@
+{% load bootstrap4 %}
+{% load i18n %}
+
+<div class="card-deck mb-4 cards-progress">
+    <div class="card">
+        <div class="card-body {% if step < 1 %}bg-light text-muted{% endif %}">
+            <p>{% blocktrans trimmed %}
+                Enter basic account information
+            {% endblocktrans %}</p>
+        </div>
+        <div class="card-footer {% if step == 1 %}text-white bg-primary{% endif %}">{% trans "Step 1: Basic information" %}
+            {% if step > 1 %}<span class="fa fa-check"></span>{% endif %}</div>
+    </div>
+    <div class="card {% if step < 2 %}bg-light text-muted{% endif %}">
+        <div class="card-body">
+            <p>{% blocktrans trimmed %}
+                Select TAN mechanism<br>(optional)
+            {% endblocktrans %}</p>
+        </div>
+        <div class="card-footer {% if step == 2 %}text-white bg-primary{% endif %}">{% trans "Step 2: TAN mechanism" %}
+            {% if step > 2 %}<span class="fa fa-check"></span>{% endif %}</div>
+    </div>
+    <div class="card {% if step < 3 %}bg-light text-muted{% endif %}">
+        <div class="card-body">
+            <p>{% blocktrans trimmed %}
+                Select TAN medium<br>(optional)
+            {% endblocktrans %}</p>
+        </div>
+        <div class="card-footer {% if step == 3 %}text-white bg-primary{% endif %}">{% trans "Step 3: TAN medium" %}
+            {% if step > 3 %}<span class="fa fa-check"></span>{% endif %}</div>
+    </div>
+    <div class="card {% if step < 4 %}bg-light text-muted{% endif %}">
+        <div class="card-body">
+            <p>{% blocktrans trimmed %}
+                Confirm with a TAN<br>(optional)
+            {% endblocktrans %}</p>
+        </div>
+        <div class="card-footer {% if step == 4 %}text-white bg-primary{% endif %}">{% trans "Step 4: Enter TAN" %}
+            {% if step > 4 %}<span class="fa fa-check"></span>{% endif %}</div>
+    </div>
+    <div class="card {% if step < 5 %}bg-light text-muted{% endif %}">
+        <div class="card-body">
+            <p>{% blocktrans trimmed %}
+                Complete the process by saving the new login
+            {% endblocktrans %}</p>
+        </div>
+        <div class="card-footer {% if step == 5 %}text-white bg-primary{% endif %}">{% trans "Step 5: Save" %}
+            {% if step > 5 %}<span class="fa fa-check"></span>{% endif %}</div>
+    </div>
+</div>
