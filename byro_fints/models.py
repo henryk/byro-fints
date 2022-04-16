@@ -3,6 +3,7 @@ from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from enum import IntEnum
 from byro.common.models import LogTargetMixin
+from enumfields import Enum, EnumField
 
 
 class FinTSLogin(models.Model, LogTargetMixin):
@@ -35,6 +36,21 @@ class FinTSLogin(models.Model, LogTargetMixin):
         return bool(self.blz and self.fints_url)
 
 
+class FinTSUserLoginState(Enum):
+    ADDING = "adding"
+    HAVE_TAN_MECHANISMS = "tan_mechs"
+    HAVE_TAN_MEDIA = "tan_media"
+    INACTIVE = "inactive"
+    ACTIVE = "active"
+
+    class Labels:
+        ADDING = _("Adding")
+        HAVE_TAN_MECHANISMS = _("Have TAN mechanisms")
+        HAVE_TAN_MEDIA = _("Have TAN media")
+        INACTIVE = _("Inactive")
+        ACTIVE = _("Active")
+
+
 class FinTSUserLogin(models.Model):
     login = models.ForeignKey(
         to="byro_fints.FinTSLogin",
@@ -56,6 +72,8 @@ class FinTSUserLogin(models.Model):
         null=False,
         blank=False,
     )
+
+    state = EnumField(FinTSUserLoginState, null=False)
 
     fints_client_data = models.BinaryField(
         verbose_name="Stored FinTS client data", null=True, blank=True

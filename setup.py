@@ -31,7 +31,7 @@ setup(
     author='Henryk Plötz',
     author_email='henryk@ploetzli.ch',
     license='Apache Software License',
-    install_requires=['fints==3.1.*', 'schwifty', 'django-securebox'],
+    install_requires=['fints==3.1.*', 'schwifty', 'django-securebox', 'django-enumfields==2.1.*'],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,
