@@ -1,6 +1,5 @@
 from django.conf.urls import url
 
-import byro_fints.views.login_add
 from . import views
 
 urlpatterns = [
@@ -9,27 +8,27 @@ urlpatterns = [
     ),
     url(
         r"^fints/login/add$",
-        byro_fints.views.login_add.FinTSLoginCreateStep1View.as_view(),
+        views.FinTSLoginCreateStep1View.as_view(),
         name="finance.fints.login.add",
     ),
     url(
         r"^fints/login/add/(?P<resume_id>[0-9a-fA-F-]+)/step-2$",
-        byro_fints.views.login_add.FinTSLoginCreateStep2View.as_view(),
+        views.FinTSLoginCreateStep2View.as_view(),
         name="finance.fints.login.add.step2",
     ),
     url(
         r"^fints/login/add/(?P<resume_id>[0-9a-fA-F-]+)/step-3$",
-        byro_fints.views.login_add.FinTSLoginCreateStep3View.as_view(),
+        views.FinTSLoginCreateStep3View.as_view(),
         name="finance.fints.login.add.step3",
     ),
     url(
         r"^fints/login/add/(?P<resume_id>[0-9a-fA-F-]+)/step-4$",
-        byro_fints.views.login_add.FinTSLoginCreateStep4View.as_view(),
+        views.FinTSLoginCreateStep4View.as_view(),
         name="finance.fints.login.add.step4",
     ),
     url(
         r"^fints/login/add/(?P<resume_id>[0-9a-fA-F-]+)/step-5$",
-        byro_fints.views.login_add.FinTSLoginCreateStep5View.as_view(),
+        views.FinTSLoginCreateStep5View.as_view(),
         name="finance.fints.login.add.step5",
     ),
     url(

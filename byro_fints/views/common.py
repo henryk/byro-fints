@@ -1,9 +1,9 @@
-from base64 import b64encode, b64decode
+from base64 import b64decode, b64encode
 
 from fints.client import FinTSOperations
 from fints.formals import DescriptionRequired
 
-from byro_fints.models import FinTSAccountCapabilities, FinTSAccount
+from ..models import FinTSAccount, FinTSAccountCapabilities
 
 CAPABILITY_MAP = {
     FinTSAccountCapabilities.FETCH_TRANSACTIONS: (FinTSOperations.GET_TRANSACTIONS,),
@@ -75,3 +75,55 @@ def _encode_binary_for_session(data: bytes) -> str:
 
 def _decode_binary_for_session(data: str) -> bytes:
     return b64decode(data.encode("us-ascii"))
+
+
+def get_flicker_css(data, css_class):
+    stream = [1, 0, 31, 30, 31, 30]
+    for i in range(len(data)):
+        d = int(data[i ^ 1], 16)
+        stream.append(1 | (d << 1))
+        stream.append(0 | (d << 1))
+
+    last = 0
+    per_frame = 100.0 / float(len(stream))
+    duration = 0.025 * len(stream)
+
+    keyframes = [[] for i in range(5)]
+
+    for index, frame in enumerate(stream):
+        changed = frame ^ last
+        last = frame
+        if index == 0:
+            changed = 31
+        for bit_index in range(5):
+            if (frame >> bit_index) & 1:
+                color = "#fff"
+            else:
+                color = "#000"
+            if (changed >> bit_index) & 1:
+                keyframes[bit_index].append(
+                    r"{}% {{ background-color: {}; }}".format(index * per_frame, color)
+                )
+
+    result = [
+        "@keyframes {css_class}-bar-{i} {{ {k} }}".format(
+            k=" ".join(kf), i=i, css_class=css_class
+        )
+        for i, kf in enumerate(keyframes)
+    ]
+    result.extend(
+        """
+        .flicker-animate-css .flicker-bar {{
+            animation-duration: {duration}s;
+            animation-iteration-count: infinite;
+            animation-timing-function: step-end;
+        }}
+        .flicker-animate-css.{css_class} .flicker-bar-{i} {{
+            animation-name: {css_class}-bar-{i};
+        }}""".format(
+            i=i, css_class=css_class, duration=duration
+        )
+        for i in range(5)
+    )
+
+    return "\n".join(result)

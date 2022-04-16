@@ -1,45 +1,33 @@
 import pickle
 import uuid
 from base64 import b64encode
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
+from django import forms
 from django.db import transaction
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import FormView
-from django import forms
-from django.http import HttpResponseRedirect
-from django.urls import reverse
 from django_securebox.utils import Storage
-from fints.hhd.flicker import parse as hhd_flicker_parse
-from fints.client import (
-    FinTSClientMode,
-    FinTS3PinTanClient,
-    NeedTANResponse,
-)
+from fints.client import FinTS3PinTanClient, FinTSClientMode, NeedTANResponse
 from fints.exceptions import FinTSClientPINError
+from fints.hhd.flicker import parse as hhd_flicker_parse
 from fints.types import SegmentSequence
 
 from byro_fints.fints_interface import (
-    with_fints,
-    open_client,
-    BYRO_FINTS_PRODUCT_ID,
-    close_client,
-    pause_client,
-    resume_client,
+    BYRO_FINTS_PRODUCT_ID, close_client, open_client,
+    pause_client, resume_client, with_fints,
 )
 from byro_fints.forms import (
-    LoginCreateStep1Form,
-    LoginCreateStep5Form,
-    LoginCreateStep2Form,
-    LoginCreateStep3Form,
-    LoginCreateStep4Form,
+    LoginCreateStep1Form, LoginCreateStep2Form, LoginCreateStep3Form,
+    LoginCreateStep4Form, LoginCreateStep5Form,
 )
 from byro_fints.models import FinTSLogin
 from byro_fints.views.common import (
-    _encode_binary_for_session,
     _decode_binary_for_session,
-    _fetch_update_accounts,
+    _encode_binary_for_session, _fetch_update_accounts,
 )
 
 
@@ -403,7 +391,7 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
 
                 css_class = "flicker-{}".format(uuid.uuid4())
                 tan_context["challenge_flicker_css_class"] = css_class
-                from . import get_flicker_css
+                from byro_fints.views import get_flicker_css
 
                 tan_context["challenge_flicker_css"] = lambda: get_flicker_css(
                     flicker.render(), css_class
