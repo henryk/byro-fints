@@ -7,18 +7,6 @@ from byro_fints.data import get_bank_information_by_blz
 class PinRequestForm(forms.Form):
     form_name = _("PIN request")
     login_name = forms.CharField(label=_("Login name"), required=True)
-    pin = forms.CharField(
-        label=_("PIN"), widget=forms.PasswordInput(render_value=True), required=True
-    )
-    store_pin = forms.ChoiceField(
-        label=_("Store PIN?"),
-        choices=[
-            ["0", _("Don't store PIN")],
-            ["1", _("For this login session only")],
-            ["2", _("Store PIN (encrypted with account password)")],
-        ],
-        initial="0",
-    )
 
 
 class LoginCreateStep1Form(PinRequestForm):

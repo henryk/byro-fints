@@ -1,10 +1,13 @@
+import abc
 import pickle
 import uuid
 from base64 import b64encode
-from typing import Dict, List, Optional
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 from django import forms
 from django.db import transaction
+from django.db.transaction import atomic
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
@@ -17,124 +20,176 @@ from fints.hhd.flicker import parse as hhd_flicker_parse
 from fints.types import SegmentSequence
 
 from byro_fints.fints_interface import (
-    BYRO_FINTS_PRODUCT_ID, close_client, open_client,
-    pause_client, resume_client, with_fints,
+    BYRO_FINTS_PRODUCT_ID,
+    close_client,
+    open_client,
+    pause_client,
+    resume_client,
+    with_fints,
 )
 from byro_fints.forms import (
-    LoginCreateStep1Form, LoginCreateStep2Form, LoginCreateStep3Form,
-    LoginCreateStep4Form, LoginCreateStep5Form,
+    LoginCreateStep1Form,
+    LoginCreateStep2Form,
+    LoginCreateStep3Form,
+    LoginCreateStep4Form,
+    LoginCreateStep5Form,
 )
-from byro_fints.models import FinTSLogin
+from byro_fints.models import FinTSLogin, FinTSUserLogin
 from byro_fints.views.common import (
     _decode_binary_for_session,
-    _encode_binary_for_session, _fetch_update_accounts,
+    _encode_binary_for_session,
+    _fetch_update_accounts,
 )
 
 
-class FinTSWrapper:
-    def __init__(self, blz=None, login_name=None, pin=None, fints_url=None):
-        self.resume_id = str(uuid.uuid4())
+class PinState(Enum):
+    NONE = "none"
+    DONTSAVE = "dontsave"
+    SAVE_ON_RESUME = "save_on_resume"
+    SAVE_TEMPORARY = "save_temporary"
+    SAVE_PERSISTENT = "save_persistent"
+
+
+class AbstractFinTSWrapper(metaclass=abc.ABCMeta):
+    SAVE_PIN_IN_RESUME = False
+
+    def __init__(self, request):
+        # Volatile state
+        self.request = request
+        self.resume_id: Optional[str] = str(uuid.uuid4())
+        self._pin: Optional[str] = None
         self.client: Optional[FinTS3PinTanClient] = None
-        self.blz: Optional[str] = blz
-        self.login_name: Optional[str] = login_name
-        self.pin: Optional[str] = pin
-        self.fints_url: Optional[str] = fints_url
-        self.display_name: Optional[str] = None
-        self.from_data: Optional[bytes] = None
+
+        # Saved state
+        self.pin_state: PinState = PinState.NONE
         self.dialog_data: Optional[bytes] = None
         self.tan_request_serialized: Optional[bytes] = None
         self.tan_mechanism: Optional[str] = None
         self.tan_medium: Optional[str] = None
         self.tan_mechanisms: Optional[Dict[str, str]] = None
         self.tan_media: Optional[List[str]] = None
-        self.information: Optional[dict] = None
-        self.accounts: Optional[dict] = None
 
-    @staticmethod
-    def _label(resume_id):
-        return "byro_fints:login.add:%s" % resume_id
+    def augment_form_pin_fields(self, form: forms.Form):
+        # FIXME Implement sentinel initial
 
-    def save_in_session(self, request) -> str:
+        if "pin" not in form.fields:
+            form.fields["pin"] = forms.CharField(
+                label=_("PIN"),
+                widget=forms.PasswordInput(render_value=True),
+                required=True,
+            )
+        if "store_pin" not in form.fields:
+            form.fields["store_pin"] = forms.ChoiceField(
+                label=_("Store PIN?"),
+                choices=[
+                    [PinState.DONTSAVE.value, _("Don't store PIN")],
+                    [PinState.SAVE_TEMPORARY.value, _("For this login session only")],
+                    [
+                        PinState.SAVE_PERSISTENT.value,
+                        _("Store PIN (encrypted with account password)"),
+                    ],
+                ],
+                initial=self.pin_state.value,
+            )
+
+    @property
+    def pin(self) -> Optional[str]:
+        if self.pin_state in (
+            PinState.NONE,
+            PinState.DONTSAVE,
+            PinState.SAVE_ON_RESUME,
+        ):
+            return self._pin
+        else:
+            return self.request.securebox[
+                self.resume_label + "/pin"
+            ]  # FIXME By fints user login
+
+    def load_from_form(self, form: forms.Form):
+        if "pin" in form.cleaned_data:
+            if "store_pin" in form.cleaned_data:
+                store_pin = PinState(form.cleaned_data["store_pin"])
+            else:
+                store_pin = PinState.DONTSAVE
+
+            # FIXME Compare with SENTINEL
+            # FIXME Store pin by fints user login
+
+            if self.SAVE_PIN_IN_RESUME and store_pin == PinState.DONTSAVE:
+                self._pin = form.cleaned_data["pin"]
+                self.pin_state = PinState.SAVE_ON_RESUME
+            else:
+                self.pin_state = store_pin
+
+    @property
+    def resume_label(self):
+        return "byro_fints:resume:%s" % self.resume_id
+
+    def _get_data_for_session(self) -> Tuple:
+        return (
+            self.pin_state,
+            self.dialog_data,
+            self.tan_request_serialized,
+            self.tan_mechanism,
+            self.tan_medium,
+            self.tan_mechanisms,
+            self.tan_media,
+        )
+
+    @atomic
+    def save_in_session(self) -> str:
         if self.client:
-            self.from_data, self.dialog_data = pause_client(self.client)
+            client_data, self.dialog_data = pause_client(self.client)
+            self._do_save_client_data(client_data)
             self.client = None
 
-        label = self._label(self.resume_id)
+        data = (self.__class__.__name__,) + self._get_data_for_session()
+        self.request.session[self.resume_label] = _encode_binary_for_session(
+            pickle.dumps(data)
+        )
 
-        request.session[label] = _encode_binary_for_session(
-            pickle.dumps(
-                (
-                    self.blz,
-                    self.login_name,
-                    self.fints_url,
-                    self.display_name,
-                    self.from_data,
-                    self.dialog_data,
-                    self.tan_request_serialized,
-                    self.tan_mechanism,
-                    self.tan_medium,
-                    self.tan_mechanisms,
-                    self.tan_media,
-                    self.information,
-                    self.accounts,
-                )
+        # PIN saved under resume_id is saved here
+        if self.pin_state is PinState.SAVE_ON_RESUME:
+            self.request.securebox.store_value(
+                self.resume_label + "/pin", self._pin, storage=Storage.TRANSIENT_ONLY
             )
-        )
-        request.securebox.store_value(
-            label + "/pin", self.pin, storage=Storage.TRANSIENT_ONLY
-        )
 
         return self.resume_id
 
+    def _set_data_from_session(self, data):
+        (
+            self.pin_state,
+            self.dialog_data,
+            self.tan_request_serialized,
+            self.tan_mechanism,
+            self.tan_medium,
+            self.tan_mechanisms,
+            self.tan_media,
+        ) = data
+
     @classmethod
     def restore_from_session(cls, request, resume_id: str):
-        label = cls._label(resume_id)
-
-        data = request.session[label]
-        pin = request.securebox[label + "/pin"]
-
-        retval = cls()
-        (
-            retval.blz,
-            retval.login_name,
-            retval.fints_url,
-            retval.display_name,
-            retval.from_data,
-            retval.dialog_data,
-            retval.tan_request_serialized,
-            retval.tan_mechanism,
-            retval.tan_medium,
-            retval.tan_mechanisms,
-            retval.tan_media,
-            retval.information,
-            retval.accounts,
-        ) = pickle.loads(_decode_binary_for_session(data))
-        retval.pin = pin
-
+        retval = cls(request)
         retval.resume_id = resume_id
-
-        return retval
-
-    def delete_from_session(self, request):
-        label = self._label(self.resume_id)
-
-        del request.session[label]
-        request.securebox.delete_value(label + "/pin")
-
-    @classmethod
-    def from_step1(cls, form: forms.Form):
-        retval = cls(
-            form.cleaned_data["blz"],
-            form.cleaned_data["login_name"],
-            form.cleaned_data["pin"],
-            form.cleaned_data["fints_url"],
+        data = pickle.loads(
+            _decode_binary_for_session(request.session[retval.resume_label])
         )
-        retval.display_name = form.cleaned_data["name"]
+        assert data[0] == retval.__class__.__name__
+        retval._set_data_from_session(data[1:])
+
+        if retval.pin_state is PinState.SAVE_ON_RESUME:
+            retval._pin = request.securebox[retval.resume_label + "/pin"]
+
         return retval
+
+    def delete_from_session(self):
+        del self.request.session[self.resume_label]
+        self.request.securebox.delete_value(self.resume_label + "/pin")
 
     def open(self):
         if not self.client:
-            args = [self.blz, self.login_name, self.pin, self.fints_url]
+            client_args = self._get_client_args()
+            args = client_args[0:2] + (self.pin,) + client_args[2:]
             kwargs = dict(
                 product_id=BYRO_FINTS_PRODUCT_ID,
                 mode=FinTSClientMode.INTERACTIVE,
@@ -148,6 +203,7 @@ class FinTSWrapper:
                     dialog_data=self.dialog_data,
                     **kwargs,
                 )
+                self.dialog_data = None
             else:
                 self.client = open_client(*args, from_data=self.from_data, **kwargs)
                 if getattr(self.client, "init_tan_response", None):
@@ -165,7 +221,7 @@ class FinTSWrapper:
             None,
             SegmentSequence(self.tan_request_serialized).segments[0],
             "_continue_dialog_initialization",
-            self.get_readonly_client().is_challenge_structured(),
+            (self.client if self.client else self.get_readonly_client()).is_challenge_structured(),
         )
 
     def reopen(self, **kwargs):
@@ -176,15 +232,17 @@ class FinTSWrapper:
 
     def close(self):
         if self.client:
-            self.from_data = close_client(self.client, including_private=True)
+            from_data = close_client(self.client, including_private=True)
+            self._do_save_client_data(from_data)
             self.client = None
 
     def get_readonly_client(self) -> FinTS3PinTanClient:
+        base_args = self._get_client_args()
         client = FinTS3PinTanClient(
-            self.blz,
-            self.login_name,
+            base_args[0],
+            base_args[1],
             "XXX",
-            self.fints_url,
+            base_args[2],
             product_id=BYRO_FINTS_PRODUCT_ID,
             from_data=self.from_data,
             mode=FinTSClientMode.OFFLINE,
@@ -210,12 +268,150 @@ class FinTSWrapper:
         print(self.tan_media)
         return self.tan_media
 
+    @abc.abstractmethod
+    def _do_save_client_data(self, client_data: bytes):
+        """Take client_data and save it"""
+
+    @abc.abstractmethod
+    def _get_client_args(self) -> Tuple[str, str, str]:
+        """Must return (blz, login_name, fints_url)"""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def from_data(self) -> bytes:
+        pass
+
+
+class FinTSWrapper(AbstractFinTSWrapper):
+    def __init__(self, request):
+        super().__init__(request)
+        self.user_login_pk: Optional[int] = None
+
+    def load_from_user_login(self, user_login_pk: int):
+        self.user_login_pk = user_login_pk
+        # FIXME Set PIN state
+
+    @property
+    def pin_label(self):
+        user_login = self.get_user_login()
+        assert user_login is not None
+        return "byro_fints__pin__{}__cache".format(user_login.login.pk)
+
+    @property
+    def pin(self) -> str:
+        raise NotImplemented  # FIXME
+
+    def save_pin(self, pin_state: PinState, pin: str):
+        raise NotImplemented  # FIXME
+
+    def _get_client_args(self) -> Tuple[str, str, str]:
+        user_login = self.get_user_login()
+        return user_login.login.blz, user_login.login_name, user_login.login.fints_url
+
+    @property
+    def from_data(self) -> bytes:
+        return self.get_user_login().fints_client_data
+
+    def get_user_login(self) -> Optional[FinTSUserLogin]:
+        if self.user_login_pk is None:
+            return None
+        return (
+            FinTSUserLogin.objects.filter(pk=self.user_login_pk, user=self.request.user)
+            .select_related("login")
+            .first()
+        )
+
+    def _do_save_client_data(self, client_data: bytes):
+        user_login = self.get_user_login()
+        user_login.fints_client_data = client_data
+        user_login.save(update_fields=["fints_client_data"])
+
+
+class FinTSWrapperAddProcess(AbstractFinTSWrapper):
+    SAVE_PIN_IN_RESUME = True
+
+    def __init__(self, request):
+        super().__init__(request)
+        self.pin_state_shouldbe: PinState = PinState.NONE
+        self.login_pk: Optional[int] = None
+        self.client_data: Optional[bytes] = None
+        self.blz: Optional[str] = None
+        self.login_name: Optional[str] = None
+        self.fints_url: Optional[str] = None
+        self.display_name: Optional[str] = None
+        self.information: Optional[dict] = None
+        self.accounts: Optional[dict] = None
+
+    def _get_client_args(self) -> Tuple[str, str, str]:
+        return self.blz, self.login_name, self.fints_url
+
+    @property
+    def from_data(self) -> bytes:
+        return self.client_data
+
+    def _do_save_client_data(self, client_data: bytes):
+        # Saves it in the object to be later retrieved by _get_data_for_session
+        self.client_data = client_data
+
+    def _get_data_for_session(self) -> Tuple:
+        return super()._get_data_for_session() + (
+            self.pin_state_shouldbe,
+            self.login_pk,
+            self.client_data,
+            self.blz,
+            self.login_name,
+            self.fints_url,
+            self.display_name,
+            self.information,
+            self.accounts,
+        )
+
+    def _set_data_from_session(self, data):
+        super()._set_data_from_session(data[:-9])
+        (
+            self.pin_state_shouldbe,
+            self.login_pk,
+            self.client_data,
+            self.blz,
+            self.login_name,
+            self.fints_url,
+            self.display_name,
+            self.information,
+            self.accounts,
+        ) = data[-9:]
+
+    @property
+    def login(self) -> Optional[FinTSLogin]:
+        if not self.login_pk:
+            return None
+        return FinTSLogin.objects.filter(pk=self.login_pk).first()
+
+    def load_from_login(self, login_pk: int):
+        self.login_pk = login_pk
+        login = self.login
+        self.blz = login.blz
+        self.fints_url = login.fints_url
+        self.display_name = login.name
+
+    def load_from_form(self, form: forms.Form):
+        super().load_from_form(form)
+        if form.cleaned_data.get("blz", "").strip():
+            self.blz = form.cleaned_data["blz"]
+        if form.cleaned_data.get("login_name", "").strip():
+            self.login_name = form.cleaned_data["login_name"]
+        if form.cleaned_data.get("fints_url", "").strip():
+            self.fints_url = form.cleaned_data["fints_url"]
+        if form.cleaned_data.get("name", "").strip():
+            self.display_name = form.cleaned_data["name"]
+        if form.cleaned_data.get("store_pin", "").strip():
+            self.pin_state_shouldbe = PinState(form.cleaned_data["store_pin"])
+
     def do_step2(self, tan_mechanism: Optional[str] = None) -> bool:
         if len(self.tan_mechanisms) > 1 and tan_mechanism is None:
             return False
         tan_mechanism = tan_mechanism or self.tan_mechanism
         if tan_mechanism != self.tan_mechanism:
-            print("REOPEN Step 2")
             self.reopen(tan_mechanism=tan_mechanism)
         return True
 
@@ -229,46 +425,80 @@ class FinTSWrapper:
                 self.reopen(tan_medium=tan_medium)
         return True
 
-    def do_step4(self):
+    def do_step4(self, tan: Optional[str] = None):
         if self.tan_request:
-            print("TAN request: {}".format(self.tan_request.challenge))
-            return False
+            if tan is None:
+                return False
+            else:
+                self.client.send_tan(self.tan_request, tan)
 
         self.accounts = self.client.get_sepa_accounts()
         self.information = self.client.get_information()
         return True
 
 
-class FinTSLoginCreateStep1View(FormView):
+class SessionBasedFinTSWrapperMixin:
+    def __init__(self):
+        super().__init__()
+        self.wrapper: Optional[FinTSWrapperAddProcess] = None
+
+    def setup(self, *args, **kwargs):
+        super().setup(*args, **kwargs)
+        if "resume_id" in self.kwargs:
+            self.wrapper = FinTSWrapperAddProcess.restore_from_session(
+                self.request, self.kwargs["resume_id"]
+            )
+        else:
+            self.wrapper = FinTSWrapperAddProcess(self.request)
+            login = self.request.GET.get("login", None)
+            if login:
+                login_pk = int(login)
+                self.wrapper.load_from_login(login_pk)
+
+
+class FinTSLoginCreateStep1View(SessionBasedFinTSWrapperMixin, FormView):
     template_name = "byro_fints/login_add_1.html"
     form_class = LoginCreateStep1Form
+
+    def get_form(self, *args, **kwargs):
+        form: forms.Form = super().get_form(*args, **kwargs)
+        self.wrapper.augment_form_pin_fields(form)
+        if self.wrapper.login_pk:
+            login = self.wrapper.login
+            form.fields["blz"].initial = login.blz
+            form.fields["blz"].disabled = True
+            form.fields["fints_url"].initial = login.fints_url
+            form.fields["fints_url"].disabled = True
+            form.fields["name"].initial = login.name
+            form.fields["name"].disabled = True
+        return form
 
     @transaction.atomic
     @with_fints
     def form_valid(self, form):
-        wrapper = FinTSWrapper.from_step1(form)
+        self.wrapper.load_from_form(form)
 
         try:
-            wrapper.open()
+            self.wrapper.open()
 
-            tan_mechanisms = wrapper.get_tan_mechanisms()
+            tan_mechanisms = self.wrapper.get_tan_mechanisms()
             if len(tan_mechanisms) == 0:
                 form.add_error(None, _("Can't find TAN mechanism"))
                 return self.form_invalid(form)
 
             next_step = 2  # select tan mechanism
-            if wrapper.do_step2():
+            if self.wrapper.do_step2():
                 next_step = 3  # select tan media
 
             if next_step == 3:
-                if wrapper.do_step3():
+                if self.wrapper.do_step3():
                     next_step = 4  # fetch account info
 
             if next_step == 4:
-                if wrapper.do_step4():
+                if self.wrapper.do_step4():
                     next_step = 5
 
-            resume_id = wrapper.save_in_session(self.request)
+            resume_id = self.wrapper.save_in_session()
 
             return HttpResponseRedirect(
                 reverse(
@@ -284,15 +514,7 @@ class FinTSLoginCreateStep1View(FormView):
             return self.form_invalid(form)
 
         finally:
-            wrapper.close()
-
-
-class SessionBasedFinTSWrapperMixin:
-    def setup(self, *args, **kwargs):
-        super().setup(*args, **kwargs)
-        self.wrapper = FinTSWrapper.restore_from_session(
-            self.request, self.kwargs["resume_id"]
-        )
+            self.wrapper.close()
 
 
 class FinTSLoginCreateStep2View(SessionBasedFinTSWrapperMixin, FormView):
@@ -324,7 +546,7 @@ class FinTSLoginCreateStep2View(SessionBasedFinTSWrapperMixin, FormView):
             if self.wrapper.do_step4():
                 next_step = 5
 
-        resume_id = self.wrapper.save_in_session(self.request)
+        resume_id = self.wrapper.save_in_session()
 
         return HttpResponseRedirect(
             reverse(
@@ -361,7 +583,7 @@ class FinTSLoginCreateStep3View(SessionBasedFinTSWrapperMixin, FormView):
             if self.wrapper.do_step4():
                 next_step = 5
 
-        resume_id = self.wrapper.save_in_session(self.request)
+        resume_id = self.wrapper.save_in_session()
 
         return HttpResponseRedirect(
             reverse(
@@ -391,7 +613,7 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
 
                 css_class = "flicker-{}".format(uuid.uuid4())
                 tan_context["challenge_flicker_css_class"] = css_class
-                from byro_fints.views import get_flicker_css
+                from .common import get_flicker_css
 
                 tan_context["challenge_flicker_css"] = lambda: get_flicker_css(
                     flicker.render(), css_class
@@ -419,15 +641,15 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
 
     @transaction.atomic
     @with_fints
-    def form_valid(self, form):
+    def form_valid(self, form: forms.Form):
         self.wrapper.open()
 
         next_step = 4
         if next_step == 4:
-            if self.wrapper.do_step4():
+            if self.wrapper.do_step4(tan=form.cleaned_data["tan"]):
                 next_step = 5
 
-        resume_id = self.wrapper.save_in_session(self.request)
+        resume_id = self.wrapper.save_in_session()
 
         return HttpResponseRedirect(
             reverse(
@@ -452,12 +674,19 @@ class FinTSLoginCreateStep5View(SessionBasedFinTSWrapperMixin, FormView):
 
         self.wrapper.open()
 
-        fints_login = FinTSLogin.objects.create(
-            name=display_name, blz=self.wrapper.blz, fints_url=self.wrapper.fints_url
+        if self.wrapper.login:
+            fints_login = self.wrapper.login
+        else:
+            fints_login, _ = FinTSLogin.objects.get_or_create(
+                name=display_name,
+                blz=self.wrapper.blz,
+                fints_url=self.wrapper.fints_url,
+            )
+
+        fints_user_login, _ = fints_login.user_login.get_or_create(
+            user=self.request.user
         )
-        fints_user_login = fints_login.user_login.create(
-            user=self.request.user, login_name=self.wrapper.login_name
-        )
+        fints_user_login.login_name = self.wrapper.login_name
 
         _fetch_update_accounts(
             fints_user_login,
@@ -468,10 +697,22 @@ class FinTSLoginCreateStep5View(SessionBasedFinTSWrapperMixin, FormView):
         )
 
         self.wrapper.close()
+        fints_user_login.available_tan_media = (
+            [{"name": e} for e in self.wrapper.tan_media]
+            if self.wrapper.tan_media
+            else []
+        )
+        fints_user_login.selected_tan_medium = self.wrapper.tan_medium
         fints_user_login.fints_client_data = self.wrapper.from_data
-        fints_user_login.save(update_fields=["fints_client_data"])
+        fints_user_login.save()
 
-        self.wrapper.delete_from_session(self.request)
+        # FIXME
+        # if self.wrapper.pin_state_shouldbe in (PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
+        #     new_wrapper = FinTSWrapper(self.request)
+        #     new_wrapper.load_from_user_login(fints_user_login.pk)
+        #     new_wrapper.save_pin(self.wrapper.pin_state_shouldbe, self.wrapper.pin)
+
+        self.wrapper.delete_from_session()
 
         return HttpResponseRedirect(
             reverse(

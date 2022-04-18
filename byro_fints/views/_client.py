@@ -10,7 +10,10 @@ from django.utils.translation import ugettext_lazy as _
 from django.views.generic.edit import FormMixin
 from django_securebox.utils import Storage
 from fints.client import (
-    FinTS3PinTanClient, FinTSClientMode, NeedTANResponse, ResponseStatus,
+    FinTS3PinTanClient,
+    FinTSClientMode,
+    NeedTANResponse,
+    ResponseStatus,
 )
 from fints.exceptions import FinTSClientPINError
 from fints.formals import TANMedia5

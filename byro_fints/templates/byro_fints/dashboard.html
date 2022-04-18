@@ -23,7 +23,8 @@
     {% endblocktrans %}</p>
     <p><a class="btn btn-success" href="{% url "plugins:byro_fints:finance.fints.login.add" %}"><span class="fa fa-plus"></span> {% trans "Create bank login" %}</a></p>
 
-    <h4>{% trans "Known bank logins" %}</h4>
+    {% if fints_logins %}
+    <h4>{% trans "Bank logins that have been fully set up" %}</h4>
     <table class="table table-sm">
         <thead>
             <tr>
@@ -51,6 +52,35 @@
             {% endfor %}
         </tbody>
     </table>
+    {% endif %}
+
+    {% if inactive_logins %}
+    <h4>{% trans "Other bank logins" %}</h4>
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th class="table-column-small">{% trans "BLZ" %}</th>
+                <th class="table-column-large">{% trans "Name" %}</th>
+                <th class="table-column-large">{% trans "FinTS URL" %}</th>
+                <th>{% trans "Actions" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for login in inactive_logins %}
+                <tr>
+                    <td>{{ login.blz }}</td>
+                    <td>{{ login.name }}</td>
+                    <td>{{ login.fints_url }}</td>
+                    <td>
+                        <a href="{% url "plugins:byro_fints:finance.fints.login.add" %}?login={{ login.pk }}" class="btn btn-success">
+                            <span class="fa fa-plus" title="{% trans "Finish setting up login" %}"></span><span class="sr-only">{% trans "Set up login" %}</span>
+                        </a>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
 
     <h4>{% trans "Known bank accounts" %}</h4>
     {% include "byro_fints/snippet_account_list.html" with account_list=fints_accounts %}
