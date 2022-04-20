@@ -3,7 +3,7 @@ import pickle
 import uuid
 from base64 import b64encode
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TypeVar
 
 from django import forms
 from django.db import transaction
@@ -50,7 +50,7 @@ class PinState(Enum):
     SAVE_PERSISTENT = "save_persistent"
 
 
-class AbstractFinTSWrapper(metaclass=abc.ABCMeta):
+class AbstractFinTSHelper(metaclass=abc.ABCMeta):
     SAVE_PIN_IN_RESUME = False
 
     def __init__(self, request):
@@ -285,7 +285,7 @@ class AbstractFinTSWrapper(metaclass=abc.ABCMeta):
         pass
 
 
-class FinTSWrapper(AbstractFinTSWrapper):
+class FinTSHelper(AbstractFinTSHelper):
     def __init__(self, request):
         super().__init__(request)
         self.user_login_pk: Optional[int] = None
@@ -311,7 +311,7 @@ class FinTSWrapper(AbstractFinTSWrapper):
 
     @classmethod
     def restore_from_session(cls, request, resume_id: str):
-        retval: FinTSWrapper = cls.restore_from_session(request, resume_id)
+        retval: FinTSHelper = cls.restore_from_session(request, resume_id)
         retval._restore_pin_state_from_securebox()
         return retval
 
@@ -365,7 +365,7 @@ class FinTSWrapper(AbstractFinTSWrapper):
         user_login.save(update_fields=["fints_client_data"])
 
 
-class FinTSWrapperAddProcess(AbstractFinTSWrapper):
+class FinTSHelperAddProcess(AbstractFinTSHelper):
     SAVE_PIN_IN_RESUME = True
 
     def __init__(self, request):
@@ -477,34 +477,50 @@ class FinTSWrapperAddProcess(AbstractFinTSWrapper):
         return True
 
 
-class SessionBasedFinTSWrapperMixin:
+_HELPER_CLASS_CLASS = TypeVar("_HELPER_CLASS_CLASS")
+
+
+class SessionBasedFinTSHelperMixin:
+    HELPER_CLASS: _HELPER_CLASS_CLASS = FinTSHelper
+
     def __init__(self):
         super().__init__()
-        self.wrapper: Optional[FinTSWrapperAddProcess] = None
+        self.fints: Optional[_HELPER_CLASS_CLASS] = None
 
     def setup(self, *args, **kwargs):
         super().setup(*args, **kwargs)
         if "resume_id" in self.kwargs:
-            self.wrapper = FinTSWrapperAddProcess.restore_from_session(
+            self.fints = self.HELPER_CLASS.restore_from_session(
                 self.request, self.kwargs["resume_id"]
             )
         else:
-            self.wrapper = FinTSWrapperAddProcess(self.request)
+            self.fints = self.HELPER_CLASS(self.request)
             login = self.request.GET.get("login", None)
             if login:
                 login_pk = int(login)
-                self.wrapper.load_from_login(login_pk)
+                self.fints.load_from_login(login_pk)
 
 
-class FinTSLoginCreateStep1View(SessionBasedFinTSWrapperMixin, FormView):
+class SessionBasedFinTSAddProcessHelperMixin(SessionBasedFinTSHelperMixin):
+    HELPER_CLASS = FinTSHelperAddProcess
+
+    def setup(self, *args, **kwargs):
+        super().setup(*args, **kwargs)
+        login = self.request.GET.get("login", None)
+        if login:
+            login_pk = int(login)
+            self.fints.load_from_login(login_pk)
+
+
+class FinTSLoginCreateStep1View(SessionBasedFinTSAddProcessHelperMixin, FormView):
     template_name = "byro_fints/login_add_1.html"
     form_class = LoginCreateStep1Form
 
     def get_form(self, *args, **kwargs):
         form: forms.Form = super().get_form(*args, **kwargs)
-        self.wrapper.augment_form_pin_fields(form)
-        if self.wrapper.login_pk:
-            login = self.wrapper.login
+        self.fints.augment_form_pin_fields(form)
+        if self.fints.login_pk:
+            login = self.fints.login
             form.fields["blz"].initial = login.blz
             form.fields["blz"].disabled = True
             form.fields["fints_url"].initial = login.fints_url
@@ -516,29 +532,29 @@ class FinTSLoginCreateStep1View(SessionBasedFinTSWrapperMixin, FormView):
     @transaction.atomic
     @with_fints
     def form_valid(self, form):
-        self.wrapper.load_from_form(form)
+        self.fints.load_from_form(form)
 
         try:
-            self.wrapper.open()
+            self.fints.open()
 
-            tan_mechanisms = self.wrapper.get_tan_mechanisms()
+            tan_mechanisms = self.fints.get_tan_mechanisms()
             if len(tan_mechanisms) == 0:
                 form.add_error(None, _("Can't find TAN mechanism"))
                 return self.form_invalid(form)
 
             next_step = 2  # select tan mechanism
-            if self.wrapper.do_step2():
+            if self.fints.do_step2():
                 next_step = 3  # select tan media
 
             if next_step == 3:
-                if self.wrapper.do_step3():
+                if self.fints.do_step3():
                     next_step = 4  # fetch account info
 
             if next_step == 4:
-                if self.wrapper.do_step4():
+                if self.fints.do_step4():
                     next_step = 5
 
-            resume_id = self.wrapper.save_in_session()
+            resume_id = self.fints.save_in_session()
 
             return HttpResponseRedirect(
                 reverse(
@@ -554,39 +570,39 @@ class FinTSLoginCreateStep1View(SessionBasedFinTSWrapperMixin, FormView):
             return self.form_invalid(form)
 
         finally:
-            self.wrapper.close()
+            self.fints.close()
 
 
-class FinTSLoginCreateStep2View(SessionBasedFinTSWrapperMixin, FormView):
+class FinTSLoginCreateStep2View(SessionBasedFinTSAddProcessHelperMixin, FormView):
     template_name = "byro_fints/login_add_2.html"
     form_class = LoginCreateStep2Form
 
     def get_form(self, *args, **kwargs):
         form: forms.Form = super().get_form(*args, **kwargs)
-        print(self.wrapper.tan_mechanisms)
+        print(self.fints.tan_mechanisms)
         form.fields["tan_mechanism"] = forms.ChoiceField(
-            choices=self.wrapper.tan_mechanisms.items()
+            choices=self.fints.tan_mechanisms.items()
         )
         return form
 
     @transaction.atomic
     @with_fints
     def form_valid(self, form):
-        self.wrapper.open()
+        self.fints.open()
 
         next_step = 2
-        if self.wrapper.do_step2(tan_mechanism=form.cleaned_data["tan_mechanism"]):
+        if self.fints.do_step2(tan_mechanism=form.cleaned_data["tan_mechanism"]):
             next_step = 3  # select tan media
 
         if next_step == 3:
-            if self.wrapper.do_step3():
+            if self.fints.do_step3():
                 next_step = 4  # fetch account info
 
         if next_step == 4:
-            if self.wrapper.do_step4():
+            if self.fints.do_step4():
                 next_step = 5
 
-        resume_id = self.wrapper.save_in_session()
+        resume_id = self.fints.save_in_session()
 
         return HttpResponseRedirect(
             reverse(
@@ -598,32 +614,32 @@ class FinTSLoginCreateStep2View(SessionBasedFinTSWrapperMixin, FormView):
         )
 
 
-class FinTSLoginCreateStep3View(SessionBasedFinTSWrapperMixin, FormView):
+class FinTSLoginCreateStep3View(SessionBasedFinTSAddProcessHelperMixin, FormView):
     template_name = "byro_fints/login_add_3.html"
     form_class = LoginCreateStep3Form
 
     def get_form(self, *args, **kwargs):
         form: forms.Form = super().get_form(*args, **kwargs)
-        print(self.wrapper.tan_media)
+        print(self.fints.tan_media)
         form.fields["tan_medium"] = forms.ChoiceField(
-            choices=[(k, k) for k in self.wrapper.tan_media]
+            choices=[(k, k) for k in self.fints.tan_media]
         )
         return form
 
     @transaction.atomic
     @with_fints
     def form_valid(self, form):
-        self.wrapper.open()
+        self.fints.open()
 
         next_step = 3
-        if self.wrapper.do_step3(tan_medium=form.cleaned_data["tan_medium"]):
+        if self.fints.do_step3(tan_medium=form.cleaned_data["tan_medium"]):
             next_step = 4  # fetch account info
 
         if next_step == 4:
-            if self.wrapper.do_step4():
+            if self.fints.do_step4():
                 next_step = 5
 
-        resume_id = self.wrapper.save_in_session()
+        resume_id = self.fints.save_in_session()
 
         return HttpResponseRedirect(
             reverse(
@@ -635,13 +651,13 @@ class FinTSLoginCreateStep3View(SessionBasedFinTSWrapperMixin, FormView):
         )
 
 
-class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
+class FinTSLoginCreateStep4View(SessionBasedFinTSAddProcessHelperMixin, FormView):
     template_name = "byro_fints/login_add_4.html"
     form_class = LoginCreateStep4Form
 
     def get_context_data(self, **kwargs):
         retval = super().get_context_data(**kwargs)
-        tan_request = self.wrapper.tan_request
+        tan_request = self.fints.tan_request
         tan_context = {}
 
         if tan_request:
@@ -669,8 +685,8 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
-        client = self.wrapper.get_readonly_client()
-        tan_param = client.get_tan_mechanisms()[self.wrapper.tan_mechanism]
+        client = self.fints.get_readonly_client()
+        tan_param = client.get_tan_mechanisms()[self.fints.tan_mechanism]
 
         tan_field = forms.CharField(
             label=tan_param.text_return_value, max_length=tan_param.max_length_input
@@ -682,14 +698,14 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
     @transaction.atomic
     @with_fints
     def form_valid(self, form: forms.Form):
-        self.wrapper.open()
+        self.fints.open()
 
         next_step = 4
         if next_step == 4:
-            if self.wrapper.do_step4(tan=form.cleaned_data["tan"]):
+            if self.fints.do_step4(tan=form.cleaned_data["tan"]):
                 next_step = 5
 
-        resume_id = self.wrapper.save_in_session()
+        resume_id = self.fints.save_in_session()
 
         return HttpResponseRedirect(
             reverse(
@@ -701,7 +717,7 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSWrapperMixin, FormView):
         )
 
 
-class FinTSLoginCreateStep5View(SessionBasedFinTSWrapperMixin, FormView):
+class FinTSLoginCreateStep5View(SessionBasedFinTSAddProcessHelperMixin, FormView):
     template_name = "byro_fints/login_add_5.html"
     form_class = LoginCreateStep5Form
 
@@ -709,49 +725,49 @@ class FinTSLoginCreateStep5View(SessionBasedFinTSWrapperMixin, FormView):
     @with_fints
     def form_valid(self, form):
         display_name = (
-            self.wrapper.display_name or self.wrapper.information["bank"]["name"]
+                self.fints.display_name or self.fints.information["bank"]["name"]
         )
 
-        self.wrapper.open()
+        self.fints.open()
 
-        if self.wrapper.login:
-            fints_login = self.wrapper.login
+        if self.fints.login:
+            fints_login = self.fints.login
         else:
             fints_login, _ = FinTSLogin.objects.get_or_create(
                 name=display_name,
-                blz=self.wrapper.blz,
-                fints_url=self.wrapper.fints_url,
+                blz=self.fints.blz,
+                fints_url=self.fints.fints_url,
             )
 
         fints_user_login, _ = fints_login.user_login.get_or_create(
             user=self.request.user
         )
-        fints_user_login.login_name = self.wrapper.login_name
+        fints_user_login.login_name = self.fints.login_name
 
         _fetch_update_accounts(
             fints_user_login,
-            self.wrapper.client,
-            information=self.wrapper.information,
-            accounts=self.wrapper.accounts,
+            self.fints.client,
+            information=self.fints.information,
+            accounts=self.fints.accounts,
             view=self,
         )
 
-        self.wrapper.close()
+        self.fints.close()
         fints_user_login.available_tan_media = (
-            [{"name": e} for e in self.wrapper.tan_media]
-            if self.wrapper.tan_media
+            [{"name": e} for e in self.fints.tan_media]
+            if self.fints.tan_media
             else []
         )
-        fints_user_login.selected_tan_medium = self.wrapper.tan_medium
-        fints_user_login.fints_client_data = self.wrapper.from_data
+        fints_user_login.selected_tan_medium = self.fints.tan_medium
+        fints_user_login.fints_client_data = self.fints.from_data
         fints_user_login.save()
 
-        if self.wrapper.pin_state_shouldbe in (PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
-            new_wrapper = FinTSWrapper(self.request)
+        if self.fints.pin_state_shouldbe in (PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
+            new_wrapper = FinTSHelper(self.request)
             new_wrapper.load_from_user_login(fints_user_login.pk)
-            new_wrapper.save_pin(self.wrapper.pin_state_shouldbe, self.wrapper.pin)
+            new_wrapper.save_pin(self.fints.pin_state_shouldbe, self.fints.pin)
 
-        self.wrapper.delete_from_session()
+        self.fints.delete_from_session()
 
         return HttpResponseRedirect(
             reverse(
