@@ -3,6 +3,7 @@ import logging
 import pickle
 import uuid
 from argparse import Namespace
+from base64 import b64encode, b64decode
 from contextvars import ContextVar
 from enum import Enum
 from functools import wraps, partial
@@ -11,15 +12,13 @@ from typing import Optional, Set, Tuple, Dict, ContextManager, List, TypeVar
 from django import forms
 from django.contrib import messages
 from django.db.transaction import atomic
-from django.forms import Form
 from django.utils.translation import ugettext_lazy as _
 from django_securebox.utils import Storage
 from fints.client import FinTS3PinTanClient, FinTSClientMode, NeedTANResponse
 from fints.exceptions import FinTSClientPINError
 from fints.types import SegmentSequence
 
-from byro_fints.models import FinTSLogin, FinTSUserLogin
-from byro_fints.views.common import _encode_binary_for_session, _decode_binary_for_session
+from .models import FinTSUserLogin
 
 BYRO_FINTS_PRODUCT_ID = "F41CDA6B1F8E0DADA0DDA29FD"
 PIN_CACHED_SENTINEL = "******"
@@ -29,6 +28,14 @@ open_clients: ContextVar[Optional[Set[FinTS3PinTanClient]]] = ContextVar('open_c
 resumed_dialogs: ContextVar[Optional[Dict[FinTS3PinTanClient, ContextManager]]] = ContextVar('resumed_dialogs',
                                                                                              default=None)
 with_fints_active: ContextVar[int] = ContextVar('with_fints_active', default=0)
+
+
+def _encode_binary_for_session(data: bytes) -> str:
+    return b64encode(data).decode("us-ascii")
+
+
+def _decode_binary_for_session(data: str) -> bytes:
+    return b64decode(data.encode("us-ascii"))
 
 
 def with_fints(wrapped):
@@ -130,132 +137,6 @@ def close_client(client: FinTS3PinTanClient, including_private: bool = False) ->
     else:
         client.__exit__(None, None, None)
     return client_data
-
-
-def get_pin_from_form(request, form: Form, login: FinTSLogin):
-    if form.cleaned_data["pin"] == PIN_CACHED_SENTINEL:
-        return request.securebox[_cache_label(login)]
-    else:
-        return form.cleaned_data["pin"]
-
-
-def save_pin_from_form(request, form: Form, login: FinTSLogin):
-    if form.cleaned_data["store_pin"] == "1":
-        storage = Storage.TRANSIENT_ONLY
-    elif form.cleaned_data["store_pin"] == "2":
-        storage = Storage.PERMANENT_ONLY
-    else:
-        storage = None
-
-    if storage:
-        if form.cleaned_data["pin"] != PIN_CACHED_SENTINEL:
-            request.securebox.store_value(
-                _cache_label(login), form.cleaned_data["pin"], storage=storage
-            )
-    else:
-        request.securebox.delete_value(_cache_label(login))
-
-
-class FinTSImplementation:
-    def __init__(self, request, fints_user_login: FinTSUserLogin):
-        self.request = request
-        self.fints_user_login = fints_user_login
-        self.client: Optional[FinTS3PinTanClient] = None
-        self.pin = None
-        self.pin_error = False
-
-    def readonly_client(self) -> FinTS3PinTanClient:
-        return FinTS3PinTanClient(
-            self.fints_user_login.login.blz,
-            self.fints_user_login.login_name,
-            "XXX",
-            self.fints_user_login.login.fints_url,
-            product_id=BYRO_FINTS_PRODUCT_ID,
-            from_data=self.fints_user_login.fints_client_data,
-            mode=FinTSClientMode.OFFLINE,
-        )
-
-    def update_from_form(self, form: Form):
-        self.fints_user_login.login_name = form.cleaned_data["login_name"]
-        self.pin = get_pin_from_form(form, self.fints_user_login.login)
-
-    def fints_callback(self, segment, response):
-        l_ = None
-        if response.code.startswith("0"):
-            l_ = partial(messages.info, self.request)
-        elif response.code.startswith("9"):
-            l_ = partial(messages.info, self.request)
-        elif response.code.startswith("0"):
-            l_ = partial(messages.info, self.request)
-        if l_:
-            l_(
-                "{} \u2014 {}".format(response.code, response.text)
-                + ("({})".format(response.parameters) if response.parameters else "")
-            )
-
-    def open(self):
-        # FIXME HACK HACK HACK The python-fints API with regards to TAN media is not very useful yet
-        # Circumvent it here
-        if self.fints_user_login.selected_tan_medium:
-            from fints.formals import TANMedia5
-            tan_medium = TANMedia5(
-                tan_medium_name=self.fints_user_login.selected_tan_medium
-            )
-        else:
-            tan_medium = None
-
-        try:
-            client = open_client(
-                self.fints_user_login.login.blz,
-                self.fints_user_login.login_name,
-                self.pin,
-                self.fints_user_login.login.fints_url,
-                tan_medium=tan_medium,
-                product_id=BYRO_FINTS_PRODUCT_ID,
-                from_data=self.fints_user_login.fints_client_data,
-                mode=FinTSClientMode.INTERACTIVE,
-            )
-            client.add_response_callback(self.fints_callback)
-            self.client = client
-
-        except FinTSClientPINError:
-            # PIN wrong, clear cached PIN, indicate error
-            self.request.securebox.delete_value(_cache_label(self.fints_user_login.login))
-            self.pin = None
-            self.pin_error = True
-            return
-
-    def save_from_form(self, form: Form):
-        if self.pin is not None and not self.pin_error:
-            save_pin_from_form(self.request, form, self.fints_user_login.login)
-
-    def pause(self) -> str:
-        if self.client:
-            client_data, dialog_data = pause_client(self.client)
-            self.fints_user_login.fints_client_data = client_data
-            self.fints_user_login.save(update_fields=["fints_client_data"])
-            # FIXME dialog_data
-        self.client = None
-
-    def resume(self, resume_id: str) -> FinTS3PinTanClient:
-        pass
-
-    def close(self):
-        if self.client:
-            client_data = close_client(self.client, including_private=True)
-            self.fints_user_login.fints_client_data = client_data
-            self.fints_user_login.save(update_fields=["fints_client_data"])
-        self.client = None
-
-    def is_need_tan(self) -> bool:
-        pass
-
-    def is_pin_error(self) -> bool:
-        pass
-
-
-def _cache_label(fints_login):
-    return "byro_fints__pin__{}__cache".format(fints_login.pk)
 
 
 class PinState(Enum):
@@ -404,6 +285,20 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         del self.request.session[self.resume_label]
         self.request.securebox.delete_value(self.resume_label + "/pin")
 
+    def fints_callback(self, segment, response):
+        l_ = None
+        if response.code.startswith("0"):
+            l_ = partial(messages.info, self.request)
+        elif response.code.startswith("9"):
+            l_ = partial(messages.info, self.request)
+        elif response.code.startswith("0"):
+            l_ = partial(messages.info, self.request)
+        if l_:
+            l_(
+                "{} \u2014 {}".format(response.code, response.text)
+                + ("({})".format(response.parameters) if response.parameters else "")
+            )
+
     def open(self):
         if not self.client:
             client_args = self._get_client_args()
@@ -429,6 +324,17 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
                     self.tan_request_serialized = SegmentSequence(
                         [self.client.init_tan_response.tan_request]
                     ).render_bytes()
+            self.client.add_response_callback(self.fints_callback)
+            # FIXME Handle FinTSClientPINError
+        # except FinTSClientPINError:
+        #     # PIN wrong, clear cached PIN, indicate error
+        #     self.request.securebox.delete_value(_cache_label(fints_login))
+        #     if form:
+        #         form.add_error(
+        #             None, _("Can't establish FinTS dialog: Username/PIN wrong?")
+        #         )
+        #     pin_correct = False
+        #
 
     @property
     def tan_request(self):

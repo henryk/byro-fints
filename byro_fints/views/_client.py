@@ -19,95 +19,12 @@ from fints.exceptions import FinTSClientPINError
 from fints.formals import TANMedia5
 from fints.hhd.flicker import parse as hhd_flicker_parse
 
-from ..fints_interface import PIN_CACHED_SENTINEL, _cache_label
+from ..fints_interface import PIN_CACHED_SENTINEL
 from ..models import FinTSAccount
 from .common import get_flicker_css
 
 
 class FinTSClientMixin:
-    @contextmanager
-    def fints_client(self, fints_login, form=None):
-        fints_user_login, _ignore = fints_login.user_login.get_or_create(
-            user=self.request.user
-        )
-        if form:
-            fints_user_login.login_name = form.cleaned_data["login_name"]
-            if form.cleaned_data["pin"] == PIN_CACHED_SENTINEL:
-                pin = self.request.securebox[_cache_label(fints_login)]
-            else:
-                pin = form.cleaned_data["pin"]
-        else:
-            pin = None
-
-        client = FinTS3PinTanClient(
-            fints_login.blz,
-            fints_user_login.login_name,
-            pin,
-            fints_login.fints_url,
-            product_id="F41CDA6B1F8E0DADA0DDA29FD",
-            from_data=fints_user_login.fints_client_data,
-            mode=FinTSClientMode.INTERACTIVE,
-        )
-        client.add_response_callback(self.fints_callback)
-
-        # FIXME HACK HACK HACK The python-fints API with regards to TAN media is not very useful yet
-        # Circumvent it here
-
-        if fints_user_login.selected_tan_medium:
-            fake_tan_medium = TANMedia5(
-                tan_medium_name=fints_user_login.selected_tan_medium
-            )
-            client.set_tan_medium(fake_tan_medium)
-
-        try:
-            yield client
-            pin_correct = True
-
-        except FinTSClientPINError:
-            # PIN wrong, clear cached PIN, indicate error
-            self.request.securebox.delete_value(_cache_label(fints_login))
-            if form:
-                form.add_error(
-                    None, _("Can't establish FinTS dialog: Username/PIN wrong?")
-                )
-            pin_correct = False
-
-        if pin_correct:
-            fints_user_login.fints_client_data = client.deconstruct(
-                including_private=True
-            )
-            fints_user_login.save(update_fields=["login_name", "fints_client_data"])
-
-            if form:
-                if form.cleaned_data["store_pin"] == "1":
-                    storage = Storage.TRANSIENT_ONLY
-                elif form.cleaned_data["store_pin"] == "2":
-                    storage = Storage.PERMANENT_ONLY
-                else:
-                    storage = None
-
-                if storage:
-                    if form.cleaned_data["pin"] != PIN_CACHED_SENTINEL:
-                        self.request.securebox.store_value(
-                            _cache_label(fints_login), pin, storage=storage
-                        )
-                else:
-                    self.request.securebox.delete_value(_cache_label(fints_login))
-
-    def fints_callback(self, segment, response):
-        l_ = None
-        if response.code.startswith("0"):
-            l_ = partial(messages.info, self.request)
-        elif response.code.startswith("9"):
-            l_ = partial(messages.info, self.request)
-        elif response.code.startswith("0"):
-            l_ = partial(messages.info, self.request)
-        if l_:
-            l_(
-                "{} \u2014 {}".format(response.code, response.text)
-                + ("({})".format(response.parameters) if response.parameters else "")
-            )
-
     def _show_transaction_messages(self, response):
         if response.status == ResponseStatus.UNKNOWN:
             messages.warning(

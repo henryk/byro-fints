@@ -69,14 +69,6 @@ def _fetch_update_accounts(
         fints_user_login.save(update_fields=["available_tan_media"])
 
 
-def _encode_binary_for_session(data: bytes) -> str:
-    return b64encode(data).decode("us-ascii")
-
-
-def _decode_binary_for_session(data: str) -> bytes:
-    return b64decode(data.encode("us-ascii"))
-
-
 def get_flicker_css(data, css_class):
     stream = [1, 0, 31, 30, 31, 30]
     for i in range(len(data)):
