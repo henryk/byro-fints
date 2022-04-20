@@ -25,7 +25,7 @@ from byro_fints.fints_interface import (
     open_client,
     pause_client,
     resume_client,
-    with_fints,
+    with_fints, PIN_CACHED_SENTINEL,
 )
 from byro_fints.forms import (
     LoginCreateStep1Form,
@@ -70,8 +70,6 @@ class AbstractFinTSWrapper(metaclass=abc.ABCMeta):
         self.tan_media: Optional[List[str]] = None
 
     def augment_form_pin_fields(self, form: forms.Form):
-        # FIXME Implement sentinel initial
-
         if "pin" not in form.fields:
             form.fields["pin"] = forms.CharField(
                 label=_("PIN"),
@@ -100,10 +98,16 @@ class AbstractFinTSWrapper(metaclass=abc.ABCMeta):
             PinState.SAVE_ON_RESUME,
         ):
             return self._pin
-        else:
-            return self.request.securebox[
-                self.resume_label + "/pin"
-            ]  # FIXME By fints user login
+        raise NotImplemented
+
+    def save_pin(self, pin_state: PinState, pin: str):
+        """Based on PinState, save pin in corresponding place, then update self.pin_state"""
+        if pin_state in (PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
+            raise NotImplemented
+        # Note: We're *not* saving in session for PinState.SAVE_ON_RESUME here, but instead
+        # that's handled by store and resume
+        self._pin = pin
+        self.pin_state = pin_state
 
     def load_from_form(self, form: forms.Form):
         if "pin" in form.cleaned_data:
@@ -112,14 +116,12 @@ class AbstractFinTSWrapper(metaclass=abc.ABCMeta):
             else:
                 store_pin = PinState.DONTSAVE
 
-            # FIXME Compare with SENTINEL
-            # FIXME Store pin by fints user login
-
             if self.SAVE_PIN_IN_RESUME and store_pin == PinState.DONTSAVE:
-                self._pin = form.cleaned_data["pin"]
-                self.pin_state = PinState.SAVE_ON_RESUME
-            else:
-                self.pin_state = store_pin
+                store_pin = PinState.SAVE_ON_RESUME
+
+            pin = form.cleaned_data["pin"]
+            if pin != PIN_CACHED_SENTINEL:
+                self.save_pin(store_pin, pin)
 
     @property
     def resume_label(self):
@@ -288,9 +290,30 @@ class FinTSWrapper(AbstractFinTSWrapper):
         super().__init__(request)
         self.user_login_pk: Optional[int] = None
 
+    def augment_form_pin_fields(self, form: forms.Form):
+        super().augment_form_pin_fields(form)
+        if self.pin_state in (PinState.DONTSAVE, PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
+            form.fields["store_pin"].initial = self.pin_state
+        if self.pin_state in (PinState.SAVE_PERSISTENT, PinState.SAVE_TEMPORARY):
+            form.fields["pin"].initial = PIN_CACHED_SENTINEL
+
+    def _restore_pin_state_from_securebox(self):
+        if self.user_login_pk is None:
+            return
+        if self.request.securebox.fetch_value(self.pin_label, Storage.TRANSIENT_ONLY, default=None) is not None:
+            self.pin_state = PinState.SAVE_TEMPORARY
+        elif self.request.securebox.fetch_value(self.pin_label, Storage.PERMANENT_ONLY, default=None) is not None:
+            self.pin_state = PinState.SAVE_PERSISTENT
+
     def load_from_user_login(self, user_login_pk: int):
         self.user_login_pk = user_login_pk
-        # FIXME Set PIN state
+        self._restore_pin_state_from_securebox()
+
+    @classmethod
+    def restore_from_session(cls, request, resume_id: str):
+        retval: FinTSWrapper = cls.restore_from_session(request, resume_id)
+        retval._restore_pin_state_from_securebox()
+        return retval
 
     @property
     def pin_label(self):
@@ -300,10 +323,24 @@ class FinTSWrapper(AbstractFinTSWrapper):
 
     @property
     def pin(self) -> str:
-        raise NotImplemented  # FIXME
+        if self.user_login_pk is not None:
+            pin = self.request.securebox.fetch_value(self.pin_label, default=None)
+            if pin is not None:
+                return pin
+        return super().pin
 
     def save_pin(self, pin_state: PinState, pin: str):
-        raise NotImplemented  # FIXME
+        """Save pin in securebox, if requested."""
+        storage = None
+        if pin_state == PinState.SAVE_TEMPORARY:
+            storage = Storage.TRANSIENT_ONLY
+        elif pin_state == PinState.SAVE_PERSISTENT:
+            storage = Storage.PERMANENT_ONLY
+        if storage is not None:
+            self.request.securebox.store_value(self.pin_label, pin, storage=storage)
+            self.pin_state = pin_state
+        else:
+            return super().save_pin(pin_state, pin)
 
     def _get_client_args(self) -> Tuple[str, str, str]:
         user_login = self.get_user_login()
@@ -386,6 +423,9 @@ class FinTSWrapperAddProcess(AbstractFinTSWrapper):
         if not self.login_pk:
             return None
         return FinTSLogin.objects.filter(pk=self.login_pk).first()
+
+    def save_pin(self, pin_state: PinState, pin: str):
+        return super().save_pin(PinState.SAVE_ON_RESUME, pin)
 
     def load_from_login(self, login_pk: int):
         self.login_pk = login_pk
@@ -706,11 +746,10 @@ class FinTSLoginCreateStep5View(SessionBasedFinTSWrapperMixin, FormView):
         fints_user_login.fints_client_data = self.wrapper.from_data
         fints_user_login.save()
 
-        # FIXME
-        # if self.wrapper.pin_state_shouldbe in (PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
-        #     new_wrapper = FinTSWrapper(self.request)
-        #     new_wrapper.load_from_user_login(fints_user_login.pk)
-        #     new_wrapper.save_pin(self.wrapper.pin_state_shouldbe, self.wrapper.pin)
+        if self.wrapper.pin_state_shouldbe in (PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
+            new_wrapper = FinTSWrapper(self.request)
+            new_wrapper.load_from_user_login(fints_user_login.pk)
+            new_wrapper.save_pin(self.wrapper.pin_state_shouldbe, self.wrapper.pin)
 
         self.wrapper.delete_from_session()
 
