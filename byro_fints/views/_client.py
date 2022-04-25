@@ -24,7 +24,7 @@ from ..models import FinTSAccount
 from .common import get_flicker_css
 
 
-class FinTSClientMixin:
+class FinTSClientMixinXX:
     def _show_transaction_messages(self, response):
         if response.status == ResponseStatus.UNKNOWN:
             messages.warning(
@@ -94,30 +94,7 @@ class FinTSClientMixin:
         return data
 
 
-class FinTSClientFormMixin(FormMixin, FinTSClientMixin):
-    def _pin_store_location(self, fints_login):
-        if (
-            self.request.securebox.fetch_value(
-                _cache_label(fints_login), Storage.TRANSIENT_ONLY, default=None
-            )
-            is not None
-        ):
-            return "1"
-        elif (
-            self.request.securebox.fetch_value(
-                _cache_label(fints_login), Storage.PERMANENT_ONLY, default=None
-            )
-            is not None
-        ):
-            return "2"
-        return "0"
-
-    def get_form(self, extra_fields={}, *args, **kwargs):
-        form = super().get_form(*args, **kwargs)
-        fints_login = self.get_object()
-        self.augment_form(form, fints_login, extra_fields)
-        return form
-
+class FinTSClientFormMixinXX(FormMixin):
     def augment_form(self, form, fints_login, extra_fields={}):
         if isinstance(fints_login, FinTSAccount):
             fints_login = fints_login.login

@@ -369,9 +369,8 @@ class FinTSLoginCreateStep5View(SessionBasedFinTSAddProcessHelperMixin, FormView
 
         self.fints.open()
 
-        if self.fints.login:
-            fints_login = self.fints.login
-        else:
+        fints_login = self.fints.login
+        if not self.fints.login:
             fints_login, _ = FinTSLogin.objects.get_or_create(
                 name=display_name,
                 blz=self.fints.blz,

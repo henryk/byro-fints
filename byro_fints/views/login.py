@@ -5,15 +5,16 @@ from django.urls import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import FormView, UpdateView
 from django.views.generic.detail import SingleObjectMixin
+from fints.client import FinTS3PinTanClient
 from fints.formals import DescriptionRequired
 
+from ..fints_interface import with_fints
 from ..forms import PinRequestForm
 from ..models import FinTSLogin
-from ._client import FinTSClientFormMixin, FinTSClientMixin
-from .common import _fetch_update_accounts
+from .common import _fetch_update_accounts, SessionBasedExisitingUserLoginFinTSHelperMixin
 
 
-class FinTSLoginEditView(FinTSClientMixin, UpdateView):
+class FinTSLoginEditView(SessionBasedExisitingUserLoginFinTSHelperMixin, UpdateView):
     template_name = "byro_fints/login_edit.html"
     model = FinTSLogin
     context_object_name = "fints_login"
@@ -27,8 +28,8 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
         fints_user_login = fints_login.user_login.filter(user=self.request.user).first()
         tan_media_choices = []
 
-        with self.fints_client(fints_login) as client:
-            information = client.get_information()
+        client = self.fints.get_readonly_client()
+        information = client.get_information()
 
         if any(
             getattr(e, "description_required", None)
@@ -68,11 +69,18 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
 
         return form
 
+    @with_fints
     def form_valid(self, form):
         fints_login = self.get_object()
         if "tan_method" in form.changed_data:
-            with self.fints_client(fints_login) as client:
-                client.set_tan_mechanism(form.cleaned_data["tan_method"])
+            fints_user_login = fints_login.user_login.filter(
+                user=self.request.user
+            ).first()
+            client: FinTS3PinTanClient = self.fints.get_readonly_client()
+            # FIXME Better API (without opening a dialog)
+            client.set_tan_mechanism(form.cleaned_data["tan_method"])
+            fints_user_login.fints_client_data = client.deconstruct(including_private=True)
+            fints_user_login.save(update_fields=["fints_client_data"])
         if "tan_medium" in form.changed_data:
             fints_user_login = fints_login.user_login.filter(
                 user=self.request.user
@@ -82,7 +90,7 @@ class FinTSLoginEditView(FinTSClientMixin, UpdateView):
         return super().form_valid(form)
 
 
-class FinTSLoginRefreshView(SingleObjectMixin, FinTSClientFormMixin, FormView):
+class FinTSLoginRefreshView(SingleObjectMixin, FormView):
     template_name = "byro_fints/login_refresh.html"
     form_class = PinRequestForm
     success_url = reverse_lazy("plugins:byro_fints:finance.fints.dashboard")

@@ -371,7 +371,8 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
             from_data=self.from_data,
             mode=FinTSClientMode.OFFLINE,
         )
-        client.set_tan_mechanism(self.tan_mechanism)
+        if self.tan_mechanism is not None:
+            client.set_tan_mechanism(self.tan_mechanism)
         return client
 
     def get_tan_mechanisms(self):
@@ -430,6 +431,8 @@ class FinTSHelper(AbstractFinTSHelper):
     def load_from_user_login(self, user_login_pk: int):
         self.user_login_pk = user_login_pk
         self._restore_pin_state_from_securebox()
+        user_login: FinTSUserLogin = self.get_user_login()
+        self.tan_medium = user_login.selected_tan_medium
 
     @classmethod
     def restore_from_session(cls, request, resume_id: str):
@@ -505,7 +508,3 @@ class SessionBasedFinTSHelperMixin:
             )
         else:
             self.fints = self.HELPER_CLASS(self.request)
-            login = self.request.GET.get("login", None)
-            if login:
-                login_pk = int(login)
-                self.fints.load_from_login(login_pk)

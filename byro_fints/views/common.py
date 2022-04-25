@@ -3,6 +3,7 @@ from base64 import b64decode, b64encode
 from fints.client import FinTSOperations
 from fints.formals import DescriptionRequired
 
+from ..fints_interface import SessionBasedFinTSHelperMixin
 from ..models import FinTSAccount, FinTSAccountCapabilities
 
 CAPABILITY_MAP = {
@@ -119,3 +120,16 @@ def get_flicker_css(data, css_class):
     )
 
     return "\n".join(result)
+
+
+class SessionBasedExisitingUserLoginFinTSHelperMixin(SessionBasedFinTSHelperMixin):
+    def setup(self, *args, **kwargs):
+        super().setup(*args, **kwargs)
+        if self.fints.user_login_pk is None:
+            login = self.get_object()
+            if login:
+                user_login = login.user_login.filter(
+                    user=self.request.user
+                ).first()
+                if user_login:
+                    self.fints.load_from_user_login(user_login.pk)

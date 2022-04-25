@@ -9,10 +9,12 @@ from django.views.generic.detail import SingleObjectMixin
 from fints.client import FinTSOperations
 from fints.models import SEPAAccount
 from mt940 import models as mt940_models
+from byro.bookkeeping.models import Account
 
+from .common import SessionBasedExisitingUserLoginFinTSHelperMixin
+from ..fints_interface import FinTSHelper
 from ..forms import PinRequestForm
 from ..models import FinTSAccount
-from ._client import FinTSClientFormMixin
 
 
 # FIXME: Allow inline create
@@ -51,7 +53,7 @@ class FinTSAccountLinkView(SingleObjectMixin, FormView):
 
 
 class FinTSAccountInformationView(
-    SingleObjectMixin, FinTSClientFormMixin, TemplateView
+    SingleObjectMixin, TemplateView
 ):
     template_name = "byro_fints/account_information.html"
     model = FinTSAccount
@@ -65,8 +67,12 @@ class FinTSAccountInformationView(
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         fints_account = self.get_object()
-        with self.fints_client(fints_account.login) as client:
-            context["information"] = client.get_information()
+        fints = FinTSHelper(self.request)
+        fints.load_from_user_login(fints_account.login.user_login.filter(
+                user=self.request.user
+            ).first().pk)
+        client = fints.get_readonly_client()
+        context["information"] = client.get_information()
         for account in context["information"]["accounts"]:
             if (account["iban"] == fints_account.iban) or (
                 account["account_number"] == fints_account.accountnumber
@@ -84,7 +90,7 @@ class PinRequestAndDateForm(PinRequestForm):
     fetch_from_date = forms.DateField(label=_("Fetch start date"), required=True)
 
 
-class FinTSAccountFetchView(SingleObjectMixin, FinTSClientFormMixin, FormView):
+class FinTSAccountFetchView(SessionBasedExisitingUserLoginFinTSHelperMixin, SingleObjectMixin, FormView):
     template_name = "byro_fints/account_fetch.html"
     form_class = PinRequestAndDateForm
     success_url = reverse_lazy("plugins:byro_fints:finance.fints.dashboard")

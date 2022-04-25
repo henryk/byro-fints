@@ -5,6 +5,7 @@
 {% block fints_heading %}{% trans "Fetch transactions …" %}{% endblock %}
 
 {% block fints_content %}
+    <div style="background-color: lightcoral; font-size: larger">Warning: Probably broken</div> <!-- FIXME -->
     <form method="post">
         {% csrf_token %}
         {% bootstrap_form form layout='horizontal' %}

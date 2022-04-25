@@ -11,7 +11,6 @@ from localflavor.generic.forms import BICFormField, IBANFormField
 
 from ..forms import PinRequestForm
 from ..models import FinTSAccount, FinTSLogin
-from ._client import FinTSClientFormMixin
 
 
 class SEPATransferForm(PinRequestForm):
@@ -25,7 +24,8 @@ class SEPATransferForm(PinRequestForm):
     purpose = forms.CharField(label=_("Purpose"), required=True)
 
 
-class FinTSAccountTransferView(SingleObjectMixin, FinTSClientFormMixin, FormView):
+# FIXME Probably broken
+class FinTSAccountTransferView(SingleObjectMixin, FormView):
     template_name = "byro_fints/account_transfer.html"
     form_class = SEPATransferForm
     model = FinTSAccount
@@ -101,7 +101,7 @@ class FinTSAccountTransferView(SingleObjectMixin, FinTSClientFormMixin, FormView
         return super().form_valid(form)
 
 
-class FinTSLoginTANRequestView(SingleObjectMixin, FinTSClientFormMixin, FormView):
+class FinTSLoginTANRequestView(SingleObjectMixin, FormView):
     template_name = "byro_fints/tan_request.html"
     form_class = PinRequestForm
     model = FinTSLogin
