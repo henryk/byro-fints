@@ -10,7 +10,6 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import FormView
 from fints.exceptions import FinTSClientPINError
-from fints.hhd.flicker import parse as hhd_flicker_parse
 
 from ..fints_interface import (
     with_fints, PinState, AbstractFinTSHelper, FinTSHelper, SessionBasedFinTSHelperMixin,
@@ -129,11 +128,11 @@ class FinTSHelperAddProcess(AbstractFinTSHelper):
         return True
 
     def do_step4(self, tan: Optional[str] = None):
-        if self.tan_request:
+        if self.init_tan_request:
             if tan is None:
                 return False
             else:
-                self.client.send_tan(self.tan_request, tan)
+                self.client.send_tan(self.init_tan_request, tan)
 
         self.accounts = self.client.get_sepa_accounts()
         self.information = self.client.get_information()
@@ -297,41 +296,13 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSAddProcessHelperMixin, FormView
     def get_context_data(self, **kwargs):
         retval = super().get_context_data(**kwargs)
         tan_request = self.fints.tan_request
-        tan_context = {}
-
-        if tan_request:
-            tan_context = {"challenge": mark_safe(tan_request.challenge_html)}
-
-            if tan_request.challenge_hhduc:
-                flicker = hhd_flicker_parse(tan_request.challenge_hhduc)
-                tan_context["challenge_flicker"] = flicker.render()
-
-                css_class = "flicker-{}".format(uuid.uuid4())
-                tan_context["challenge_flicker_css_class"] = css_class
-                from .common import get_flicker_css
-
-                tan_context["challenge_flicker_css"] = lambda: get_flicker_css(
-                    flicker.render(), css_class
-                )
-
-            if tan_request.challenge_matrix:
-                tan_context["challenge_matrix_url"] = "data:{};base64,{}".format(
-                    tan_request.challenge_matrix[0],
-                    b64encode(tan_request.challenge_matrix[1]).decode("us-ascii"),
-                )
+        tan_context = self.fints.get_tan_context_data(tan_request)
 
         return dict(retval, **tan_context)
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
-        client = self.fints.get_readonly_client()
-        tan_param = client.get_tan_mechanisms()[self.fints.tan_mechanism]
-
-        tan_field = forms.CharField(
-            label=tan_param.text_return_value, max_length=tan_param.max_length_input
-        )
-
-        form.fields["tan"] = tan_field
+        self.fints.augment_form_tan_fields(form)
         return form
 
     @transaction.atomic

@@ -1,34 +1,45 @@
-from typing import Optional
+from typing import Optional, Dict, Type, Union, Tuple
 
-from .models import FinTSLogin
-from .views import FinTSClientFormMixin
+import django.http
+
+from .fints_interface import FinTSHelper
+from .models import FinTSLogin, FinTSUserLogin
 from .forms import PinRequestForm
 
-from fints.client import NeedTANResponse
+from fints.client import NeedTANResponse, TransactionResponse
 
 
-class FinTSInterface(FinTSClientFormMixin):
+class FinTSPluginInterface:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._fintsinterface_form_cache = {}
+        self.request: Optional[django.http.HttpRequest] = None
 
     @classmethod
-    def with_request(cls, request):
+    def with_request(cls, request: django.http.HttpRequest):
         retval = cls()
         retval.request = request
         return retval
 
-    def get_bank_connections(self):
+    def get_fints(self, user_login_pk: int, clazz: Type[FinTSHelper] = FinTSHelper) -> FinTSHelper:
+        retval = clazz(self.request)
+        retval.load_from_user_login(user_login_pk)
+        return retval
+
+    def get_bank_connections(self) -> Dict[int, dict]:
+        """
+        :return: Dictionary from FinTSUserLogin pk to get_information() result for that login.
+        """
         result = {}
 
-        for fints_login in FinTSLogin.objects.all():
-            with self.fints_client(fints_login) as client:
-                result[fints_login.pk] = client.get_information()
+        for fints_user_login in FinTSUserLogin.objects.filter(user=self.request.user).select_related('login'):
+            client = self.get_fints(fints_user_login.pk).get_readonly_client()
+            result[fints_user_login.pk] = client.get_information()
 
         return result
 
-    def _common_get_form(self, form_type, fints_login, extra_fields: Optional[dict] = None):
-        cache_key = (form_type, fints_login)
+    def _common_get_form(self, form_type: str, fints_user_login: FinTSUserLogin, extra_fields: Optional[dict] = None):
+        cache_key = (form_type, fints_user_login.pk)
         if cache_key in self._fintsinterface_form_cache:
             return self._fintsinterface_form_cache[cache_key]
 
@@ -45,14 +56,16 @@ class FinTSInterface(FinTSClientFormMixin):
             )
 
         form = PinRequestForm(**kwargs)
-        self.augment_form(form, fints_login, extra_fields or {})
+        helper = FinTSHelper(self.request)
+        helper.load_from_user_login(fints_user_login.pk)
+        helper.augment_form_pin_fields(form)
 
         self._fintsinterface_form_cache[cache_key] = form
 
         return form
 
-    def _get_sepa_debit_form(self, fints_login):
-        return self._common_get_form("sepa_debit", fints_login)
+    def _get_sepa_debit_form(self, fints_login: FinTSLogin):
+        return self._common_get_form("sepa_debit", fints_login.user_login.filter(user=self.request.user).first())
 
     def _get_tan_request_form(self, fints_login, tan_request_data):
         extra_fields = self.get_tan_form_fields(
@@ -122,3 +135,26 @@ class FinTSInterface(FinTSClientFormMixin):
 
     def tan_request_fini(self, transfer_uuid):
         self.clean_tan_request(transfer_uuid)
+
+
+class SepaDDFinTSHelper(FinTSHelper):
+    def sepa_dd(self, account_iban: str, **kwargs) -> Union[bool, TransactionResponse]:
+        account_list = self.client.get_sepa_accounts()
+        for account in account_list:
+            if account.iban.upper() == account_iban.upper():
+                break
+        else:
+            raise Exception("Account not found")
+
+        response = self.client.sepa_debit(account=account, **kwargs)
+
+        if isinstance(response, NeedTANResponse):
+            self.tan_request_serialized = response.get_data()
+            return False
+        else:
+            return response
+
+    def send_tan(self, tan: str):
+        retval = self.client.send_tan(NeedTANResponse.from_data(self.tan_request_serialized), tan)
+        self.tan_request_serialized = None
+        return retval

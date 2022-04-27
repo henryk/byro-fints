@@ -7,11 +7,14 @@ from base64 import b64encode, b64decode
 from contextvars import ContextVar
 from enum import Enum
 from functools import wraps, partial
-from typing import Optional, Set, Tuple, Dict, ContextManager, List, TypeVar
+from typing import Optional, Set, Tuple, Dict, ContextManager, List, TypeVar, Callable
+from fints.hhd.flicker import parse as hhd_flicker_parse
 
+import django.http
 from django import forms
 from django.contrib import messages
 from django.db.transaction import atomic
+from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
 from django_securebox.utils import Storage
 from fints.client import FinTS3PinTanClient, FinTSClientMode, NeedTANResponse
@@ -160,6 +163,7 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         # Saved state
         self.pin_state: PinState = PinState.NONE
         self.dialog_data: Optional[bytes] = None
+        self.init_tan_request_serialized: Optional[bytes] = None
         self.tan_request_serialized: Optional[bytes] = None
         self.tan_mechanism: Optional[str] = None
         self.tan_medium: Optional[str] = None
@@ -186,6 +190,14 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
                 ],
                 initial=self.pin_state.value,
             )
+
+    def augment_form_tan_fields(self, form: forms.Form):
+        client = self.get_readonly_client()
+        tan_param = client.get_tan_mechanisms()[client.get_current_tan_mechanism()]
+        tan_field = forms.CharField(
+            label=tan_param.text_return_value, max_length=tan_param.max_length_input
+        )
+        form.fields["tan"] = tan_field
 
     @property
     def pin(self) -> Optional[str]:
@@ -228,6 +240,7 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         return (
             self.pin_state,
             self.dialog_data,
+            self.init_tan_request_serialized,
             self.tan_request_serialized,
             self.tan_mechanism,
             self.tan_medium,
@@ -259,6 +272,7 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         (
             self.pin_state,
             self.dialog_data,
+            self.init_tan_request_serialized,
             self.tan_request_serialized,
             self.tan_mechanism,
             self.tan_medium,
@@ -321,8 +335,8 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
                 self.client = open_client(*args, from_data=self.from_data, **kwargs)
                 if getattr(self.client, "init_tan_response", None):
                     # FIXME See python-fints#114
-                    self.tan_request_serialized = SegmentSequence(
-                        [self.client.init_tan_response.tan_request]
+                    self.init_tan_request_serialized = SegmentSequence(
+                        [self.client.init_tan_response.init_tan_request]
                     ).render_bytes()
             self.client.add_response_callback(self.fints_callback)
             # FIXME Handle FinTSClientPINError
@@ -337,16 +351,22 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         #
 
     @property
-    def tan_request(self):
+    def init_tan_request(self):
         # FIXME See python-fints#114
-        if not self.tan_request_serialized:
+        if not self.init_tan_request_serialized:
             return None
         return NeedTANResponse(
             None,
-            SegmentSequence(self.tan_request_serialized).segments[0],
+            SegmentSequence(self.init_tan_request_serialized).segments[0],
             "_continue_dialog_initialization",
             (self.client if self.client else self.get_readonly_client()).is_challenge_structured(),
         )
+
+    @property
+    def tan_request(self):
+        if not self.tan_request_serialized:
+            return None
+        return NeedTANResponse.from_data(self.tan_request_serialized)
 
     def reopen(self, **kwargs):
         self.close()
@@ -393,6 +413,31 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         print(self.tan_media)
         return self.tan_media
 
+    @staticmethod
+    def get_tan_context_data(tan_request):
+        tan_context = {}
+        if tan_request:
+            tan_context = {"challenge": mark_safe(tan_request.challenge_html)}
+
+            if tan_request.challenge_hhduc:
+                flicker = hhd_flicker_parse(tan_request.challenge_hhduc)
+                tan_context["challenge_flicker"] = flicker.render()
+
+                css_class = "flicker-{}".format(uuid.uuid4())
+                tan_context["challenge_flicker_css_class"] = css_class
+                from .views.common import get_flicker_css
+
+                tan_context["challenge_flicker_css"] = lambda: get_flicker_css(
+                    flicker.render(), css_class
+                )
+
+            if tan_request.challenge_matrix:
+                tan_context["challenge_matrix_url"] = "data:{};base64,{}".format(
+                    tan_request.challenge_matrix[0],
+                    b64encode(tan_request.challenge_matrix[1]).decode("us-ascii"),
+                )
+        return tan_context
+
     @abc.abstractmethod
     def _do_save_client_data(self, client_data: bytes):
         """Take client_data and save it"""
@@ -413,12 +458,33 @@ class FinTSHelper(AbstractFinTSHelper):
         super().__init__(request)
         self.user_login_pk: Optional[int] = None
 
+    def _get_data_for_session(self) -> Tuple:
+        return super()._get_data_for_session() + (
+            self.user_login_pk,
+        )
+
+    def _set_data_from_session(self, data):
+        super()._set_data_from_session(data[:-1])
+        (self.user_login_pk, ) = data[-1:]
+
     def augment_form_pin_fields(self, form: forms.Form):
         super().augment_form_pin_fields(form)
+        user_login = self.get_user_login()
+        if user_login:
+            if 'login_name' in form.fields:
+                form.fields['login_name'].initial = user_login.login_name
         if self.pin_state in (PinState.DONTSAVE, PinState.SAVE_TEMPORARY, PinState.SAVE_PERSISTENT):
-            form.fields["store_pin"].initial = self.pin_state
+            form.fields["store_pin"].initial = self.pin_state.value
         if self.pin_state in (PinState.SAVE_PERSISTENT, PinState.SAVE_TEMPORARY):
             form.fields["pin"].initial = PIN_CACHED_SENTINEL
+
+    def load_from_form(self, form: forms.Form):
+        super().load_from_form(form)
+        user_login = self.get_user_login()
+        if user_login:
+            if 'login_name' in form.fields and form.cleaned_data.get("login_name", "").strip():
+                user_login.login_name = form.cleaned_data['login_name'].strip()
+                user_login.save(update_fields=["login_name"])
 
     def _restore_pin_state_from_securebox(self):
         if self.user_login_pk is None:
@@ -436,7 +502,7 @@ class FinTSHelper(AbstractFinTSHelper):
 
     @classmethod
     def restore_from_session(cls, request, resume_id: str):
-        retval: FinTSHelper = cls.restore_from_session(request, resume_id)
+        retval: FinTSHelper = super().restore_from_session(request, resume_id)
         retval._restore_pin_state_from_securebox()
         return retval
 
@@ -495,6 +561,8 @@ _HELPER_CLASS_CLASS = TypeVar("_HELPER_CLASS_CLASS")
 
 class SessionBasedFinTSHelperMixin:
     HELPER_CLASS: _HELPER_CLASS_CLASS = FinTSHelper
+    request: django.http.HttpRequest
+    kwargs: dict
 
     def __init__(self):
         super().__init__()
