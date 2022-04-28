@@ -336,7 +336,7 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
                 if getattr(self.client, "init_tan_response", None):
                     # FIXME See python-fints#114
                     self.init_tan_request_serialized = SegmentSequence(
-                        [self.client.init_tan_response.init_tan_request]
+                        [self.client.init_tan_response.tan_request]
                     ).render_bytes()
             self.client.add_response_callback(self.fints_callback)
             # FIXME Handle FinTSClientPINError

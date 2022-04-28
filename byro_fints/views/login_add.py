@@ -295,7 +295,7 @@ class FinTSLoginCreateStep4View(SessionBasedFinTSAddProcessHelperMixin, FormView
 
     def get_context_data(self, **kwargs):
         retval = super().get_context_data(**kwargs)
-        tan_request = self.fints.tan_request
+        tan_request = self.fints.init_tan_request
         tan_context = self.fints.get_tan_context_data(tan_request)
 
         return dict(retval, **tan_context)
