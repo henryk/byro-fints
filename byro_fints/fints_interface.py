@@ -408,39 +408,13 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         print(self.tan_mechanisms)
         return self.tan_mechanisms
 
-    def _hacky_get_tan_media(self, media_type = TANMediaType2.ALL, media_class = TANMediaClass4.ALL):
-        """Get information about TAN lists/generators.
-
-        Returns tuple of fints.formals.TANUsageOption and a list of fints.formals.TANMedia4 or fints.formals.TANMedia5 objects."""
-        if self.client.connection.url in ('https://hbci.postbank.de/banking/hbci.do', 'https://banking-dkb.s-fints-pt-dkb.de/fints30'):
-            # see https://github.com/raphaelm/python-fints/issues/101#issuecomment-572486099
-            context = self.client._new_dialog(lazy_init=True)
-            method = lambda dialog: dialog.init
-        else:
-            context = self.client._get_dialog()
-            method = lambda dialog: dialog.send
-
-        with context as dialog:
-            hktab = self.client._find_highest_supported_command(HKTAB4, HKTAB5)
-
-            seg = hktab(
-                tan_media_type=media_type,
-                tan_media_class=str(media_class),
-            )
-            # The specification says we should send a dummy HKTAN object but apparently it seems to do more harm than
-            # good.
-
-            try:
-                self.client._bootstrap_mode = True
-                response = method(dialog)(seg)
-            finally:
-                self.client._bootstrap_mode = False
-
-            for resp in response.response_segments(seg, 'HITAB'):
-                return resp.tan_usage_option, list(resp.tan_media_list)
-
     def get_tan_media(self):
-        _usage, tan_media = self._hacky_get_tan_media()
+        orig_is_tan_media_required = self.client.is_tan_media_required
+        self.client.is_tan_media_required = lambda *args, **kwargs: False
+        try:
+            _usage, tan_media = self.client.get_tan_media()
+        finally:
+            self.client.is_tan_media_required = orig_is_tan_media_required
         self.tan_media = [tm.tan_medium_name for tm in tan_media]
         if self.tan_medium is None and len(self.tan_media) > 0:
             self.tan_medium = list(self.tan_media)[0]
