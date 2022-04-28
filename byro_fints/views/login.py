@@ -8,10 +8,11 @@ from django.views.generic.detail import SingleObjectMixin
 from fints.client import FinTS3PinTanClient
 from fints.formals import DescriptionRequired
 
-from ..fints_interface import with_fints
+from ..fints_interface import with_fints, FinTSHelper
 from ..forms import PinRequestForm
 from ..models import FinTSLogin
 from .common import _fetch_update_accounts, SessionBasedExisitingUserLoginFinTSHelperMixin
+from ..plugin_interface import FinTSPluginInterface
 
 
 class FinTSLoginEditView(SessionBasedExisitingUserLoginFinTSHelperMixin, UpdateView):
@@ -96,6 +97,8 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
     success_url = reverse_lazy("plugins:byro_fints:finance.fints.dashboard")
     model = FinTSLogin
     context_object_name = "fints_login"
+    fints_interface: FinTSPluginInterface
+    fints_helper: FinTSHelper
 
     @property
     def object(self):
@@ -103,15 +106,30 @@ class FinTSLoginRefreshView(SingleObjectMixin, FormView):
             self.get_object()
         )  # FIXME: WTF?  Apparently I'm supposed to implement a get()/post() that sets self.object?
 
-    @transaction.atomic
-    def form_valid(self, form):
-        fints_login = self.get_object()
-        with self.fints_client(fints_login, form) as client:
-            fints_user_login = fints_login.user_login.filter(
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.fints_interface = FinTSPluginInterface.with_request(self.request)
+        self.fints_helper = self.fints_interface.get_fints(self.get_object().user_login.filter(
                 user=self.request.user
-            ).first()
-            with client:
-                _fetch_update_accounts(fints_user_login, client, view=self)
+            ).first().pk)
+
+    def get_form(self, *args, **kwargs):
+        form = super().get_form(*args, **kwargs)
+        self.fints_helper.augment_form_pin_fields(form)
+        return form
+
+    @transaction.atomic
+    @with_fints
+    def form_valid(self, form):
+        fints_user_login = self.object.user_login.filter(
+            user=self.request.user
+        ).first()
+        self.fints_helper.open()
+
+        try:
+            _fetch_update_accounts(fints_user_login, self.fints_helper.client, view=self)
+        finally:
+            self.fints_helper.close()
 
         if form.errors:
             return super().form_invalid(form)
