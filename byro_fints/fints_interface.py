@@ -409,12 +409,7 @@ class AbstractFinTSHelper(metaclass=abc.ABCMeta):
         return self.tan_mechanisms
 
     def get_tan_media(self):
-        orig_is_tan_media_required = self.client.is_tan_media_required
-        self.client.is_tan_media_required = lambda *args, **kwargs: False
-        try:
-            _usage, tan_media = self.client.get_tan_media()
-        finally:
-            self.client.is_tan_media_required = orig_is_tan_media_required
+        _usage, tan_media = self.client.get_tan_media()
         self.tan_media = [tm.tan_medium_name for tm in tan_media]
         if self.tan_medium is None and len(self.tan_media) > 0:
             self.tan_medium = list(self.tan_media)[0]

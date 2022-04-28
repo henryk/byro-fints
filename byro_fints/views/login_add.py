@@ -110,6 +110,9 @@ class FinTSHelperAddProcess(AbstractFinTSHelper):
             self.pin_state_shouldbe = PinState(form.cleaned_data["store_pin"])
 
     def do_step2(self, tan_mechanism: Optional[str] = None) -> bool:
+        if self.request and "override_selected_tan_medium" in self.request.GET:
+            print("Override triggered")
+            self.client.selected_tan_medium = self.request.GET["override_selected_tan_medium"]
         if len(self.tan_mechanisms) > 1 and tan_mechanism is None:
             return False
         tan_mechanism = tan_mechanism or self.tan_mechanism
@@ -119,6 +122,9 @@ class FinTSHelperAddProcess(AbstractFinTSHelper):
 
     def do_step3(self, tan_medium: Optional[object] = None) -> bool:
         if self.client.is_tan_media_required() and not self.client.selected_tan_medium:
+            if self.request and "override_selected_tan_medium" in self.request.GET:
+                print("Override triggered")
+                self.client.selected_tan_medium = self.request.GET["override_selected_tan_medium"]
             self.get_tan_media()
             if len(self.tan_media) > 1 and tan_medium is None:
                 return False
