@@ -1,7 +1,6 @@
 import os
 from distutils.command.build import build
 
-from django.core import management
 from setuptools import find_packages, setup
 
 try:
@@ -13,6 +12,7 @@ except:
 
 class CustomBuild(build):
     def run(self):
+        from django.core import management
         management.call_command('compilemessages', verbosity=1)
         build.run(self)
 
